@@ -109,3 +109,108 @@ def parse_memories_from_text(text: str) -> list[ExtractedMemory]:
         )
 
     return results
+
+
+# --- extraction + storage ---
+
+import datetime
+import uuid as _uuid
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
+
+from app.qdrant_store import USER_MEMORIES
+
+_EXTRACTION_TEMPLATE = """Extract 0-3 concise facts or preferences from this conversation turn.
+Only extract information that would be useful to remember long-term.
+Write the "content" field in the same language as the User's message.
+Output JSON array: [{{"content": "...", "type": "fact|preference|correction", "confidence": 0.0-1.0}}]
+Rate confidence based on how clearly and explicitly the information was stated (1.0 = stated directly, 0.5 = implied, 0.3 = uncertain).
+If nothing notable, output: []
+
+<user_turn>{user_snippet}</user_turn>
+<assistant_turn>{assistant_snippet}</assistant_turn>"""
+
+
+def _snippet(message: str) -> str:
+    return (
+        message[:1000]
+        .replace("</user_turn>", "&lt;/user_turn&gt;")
+        .replace("</assistant_turn>", "&lt;/assistant_turn&gt;")
+    )
+
+
+def deprecate_conflicting_memories(
+    client: QdrantClient, user_id: _uuid.UUID, embedding: list[float], threshold: float = 0.85
+) -> int:
+    """Mark existing active memories with high embedding similarity as deprecated.
+    Called before inserting a Correction memory (contrastive update)."""
+    hits = client.query_points(
+        collection_name=USER_MEMORIES,
+        query=embedding,
+        query_filter=Filter(
+            must=[
+                FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
+                FieldCondition(key="status", match=MatchValue(value="active")),
+            ]
+        ),
+        score_threshold=threshold,
+        limit=100,
+        with_payload=False,
+    ).points
+
+    if not hits:
+        return 0
+
+    for hit in hits:
+        client.set_payload(collection_name=USER_MEMORIES, payload={"status": "deprecated"}, points=[hit.id])
+    return len(hits)
+
+
+def extract_and_store_memories(
+    client: QdrantClient,
+    embedder,
+    llm,
+    user_id: _uuid.UUID,
+    user_message: str,
+    assistant_message: str,
+) -> int:
+    """Extract facts/preferences from a conversation turn and store them. Returns count stored."""
+    prompt = _EXTRACTION_TEMPLATE.format(
+        user_snippet=_snippet(user_message), assistant_snippet=_snippet(assistant_message)
+    )
+    raw_text = llm.generate(prompt, max_new_tokens=256, temperature=0.1)
+    memories = parse_memories_from_text(raw_text)
+
+    stored = 0
+    now_iso = datetime.datetime.utcnow().isoformat()
+    for mem in memories:
+        embedding = embedder.embed_single(mem.content)
+
+        if mem.memory_type == MemoryType.CORRECTION:
+            deprecate_conflicting_memories(client, user_id, embedding)
+
+        client.upsert(
+            collection_name=USER_MEMORIES,
+            points=[
+                PointStruct(
+                    id=str(_uuid.uuid4()),
+                    vector=embedding,
+                    payload={
+                        "user_id": str(user_id),
+                        "content": mem.content,
+                        "memory_type": mem.memory_type.value,
+                        "confidence": mem.confidence,
+                        "source": mem.source.value,
+                        "claim_class": mem.claim_class.value,
+                        "status": "active",
+                        "last_used_at": now_iso,
+                        "created_at": now_iso,
+                    },
+                )
+            ],
+            wait=True,
+        )
+        stored += 1
+
+    return stored
