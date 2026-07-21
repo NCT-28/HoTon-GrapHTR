@@ -214,3 +214,67 @@ def extract_and_store_memories(
         stored += 1
 
     return stored
+
+
+# --- retrieval ---
+
+import math
+from dataclasses import dataclass as _dataclass
+
+
+@_dataclass
+class RetrievedMemory:
+    id: str
+    content: str
+    memory_type: str
+    confidence: float
+
+
+def retrieve_memories(
+    client: QdrantClient,
+    embedder,
+    user_id: _uuid.UUID,
+    query: str,
+    top_k: int,
+    min_similarity: float,
+) -> list[RetrievedMemory]:
+    query_vector = embedder.embed_single(query)
+
+    hits = client.query_points(
+        collection_name=USER_MEMORIES,
+        query=query_vector,
+        query_filter=Filter(
+            must=[
+                FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
+                FieldCondition(key="status", match=MatchValue(value="active")),
+            ]
+        ),
+        limit=top_k * 3,
+        with_payload=True,
+    ).points
+
+    now = datetime.datetime.utcnow()
+    scored = []
+    for hit in hits:
+        if hit.score < min_similarity:
+            continue
+        payload = hit.payload
+        last_used_at = datetime.datetime.fromisoformat(payload["last_used_at"])
+        age_days = (now - last_used_at).total_seconds() / 86400.0
+        effective_confidence = payload["confidence"] * math.exp(-0.01 * age_days)
+        if effective_confidence < 0.3:
+            continue
+        scored.append((effective_confidence, hit.score, hit.id, payload))
+
+    scored.sort(key=lambda t: (-t[0], -t[1]))
+    top = scored[:top_k]
+
+    if top:
+        now_iso = now.isoformat()
+        for _eff, _score, point_id, _payload in top:
+            client.set_payload(collection_name=USER_MEMORIES, payload={"last_used_at": now_iso}, points=[point_id])
+
+    return [
+        RetrievedMemory(id=str(point_id), content=payload["content"], memory_type=payload["memory_type"], confidence=eff)
+        for eff, _score, point_id, payload in top
+    ]
