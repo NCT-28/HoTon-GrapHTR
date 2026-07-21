@@ -1,10 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 
 from app.browser_client import BrowserClient
 from app.config import get_settings
 from app.documents import add_url_route, build_documents_router
 from app.embeddings import get_embedder
-from app.qdrant_store import get_qdrant_client
+from app.qdrant_store import RAG_DOCUMENTS, get_qdrant_client
 
 
 def create_app(qdrant_client=None, embedder=None, browser_client=None) -> FastAPI:
@@ -23,6 +23,23 @@ def create_app(qdrant_client=None, embedder=None, browser_client=None) -> FastAP
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    @app.get("/api/status")
+    async def rag_status(x_user_id: str = Header(...)):
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        from app.qdrant_store import USER_MEMORIES
+
+        client = get_client_fn()
+        doc_count = client.count(
+            collection_name=RAG_DOCUMENTS,
+            count_filter=Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=x_user_id))]),
+        ).count
+        memory_count = client.count(
+            collection_name=USER_MEMORIES,
+            count_filter=Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=x_user_id))]),
+        ).count
+        return {"embed_model_loaded": True, "doc_count": doc_count, "memory_count": memory_count}
 
     return app
 
