@@ -1,5 +1,8 @@
 import uuid
 
+import pytest
+from qdrant_client.models import PointStruct
+
 from app.mcp_server import (
     EmbedTextResult,
     ExtractMemoriesResult,
@@ -13,8 +16,7 @@ from app.mcp_server import (
     retrieve_chunks_impl,
     update_profile_from_message_impl,
 )
-from app.qdrant_store import RAG_CHUNKS, USER_MEMORIES
-from qdrant_client.models import PointStruct
+from app.qdrant_store import RAG_CHUNKS
 
 
 class FakeEmbedder:
@@ -35,20 +37,52 @@ class FakeLLM:
         return self._response_text
 
 
-def _ctx(qdrant):
-    return build_tool_context(qdrant, FakeEmbedder(), FakeLLM())
+class ScriptedLLM:
+    """Routes canned responses by inspecting distinguishing text in each prompt,
+    since the full pipeline calls generate() for routing, HyDE, grading, and continue-decisions
+    in sequence with different prompts."""
+
+    def __init__(self, *, classification="single", hyde_text="hypothetical passage", grade="0.9", continue_json='{"enough": true, "next_query": null}', extraction="[]"):
+        self.classification = classification
+        self.hyde_text = hyde_text
+        self.grade = grade
+        self.continue_json = continue_json
+        self.extraction = extraction
+
+    def generate(self, prompt, max_new_tokens=256, temperature=0.1):
+        if "Classification:" in prompt:
+            return self.classification
+        if "Passage:" in prompt and "hypothetical" in prompt.lower():
+            return self.hyde_text
+        if "Relevance score:" in prompt:
+            return self.grade
+        if "JSON:" in prompt and "enough" in prompt:
+            return self.continue_json
+        return self.extraction
 
 
-def test_get_rag_context_empty_for_new_user(qdrant):
-    ctx = _ctx(qdrant)
-    result = get_rag_context_impl(ctx, str(uuid.uuid4()), "hello")
+async def _fake_web_search(query):
+    return []
+
+
+def _ctx(qdrant, **llm_kwargs):
+    if llm_kwargs:
+        return build_tool_context(qdrant, FakeEmbedder(), ScriptedLLM(**llm_kwargs), _fake_web_search)
+    return build_tool_context(qdrant, FakeEmbedder(), FakeLLM(), _fake_web_search)
+
+
+@pytest.mark.asyncio
+async def test_get_rag_context_direct_skips_retrieval_entirely(qdrant):
+    ctx = _ctx(qdrant, classification="direct")
+    result = await get_rag_context_impl(ctx, str(uuid.uuid4()), "hi there")
     assert isinstance(result, RagContextResult)
     assert result.context_text == ""
     assert result.chunks_used == 0
     assert result.memories_used == 0
 
 
-def test_get_rag_context_includes_matching_chunk(qdrant):
+@pytest.mark.asyncio
+async def test_get_rag_context_single_retrieves_via_hyde(qdrant):
     user_id = uuid.uuid4()
     qdrant.upsert(
         collection_name=RAG_CHUNKS,
@@ -57,26 +91,69 @@ def test_get_rag_context_includes_matching_chunk(qdrant):
                 id=str(uuid.uuid4()),
                 vector=[1.0] + [0.0] * 383,
                 payload={
-                    "user_id": str(user_id),
-                    "document_id": "doc-1",
-                    "content": "Relevant chunk content",
-                    "document_title": "Doc",
-                    "source_url": None,
-                    "valid_until": None,
+                    "user_id": str(user_id), "document_id": "d1", "content": "Relevant chunk content",
+                    "document_title": "Doc", "source_url": None, "valid_until": None,
+                },
+            )
+        ],
+        wait=True,
+    )
+    ctx = _ctx(qdrant, classification="single", grade="0.9")
+    result = await get_rag_context_impl(ctx, str(user_id), "query")
+    assert result.chunks_used == 1
+    assert "Relevant chunk content" in result.context_text
+    assert len(result.chunks) == 1
+    assert result.chunks[0].document_title == "Doc"
+
+
+@pytest.mark.asyncio
+async def test_get_rag_context_single_falls_back_to_web_on_low_relevance(qdrant):
+    user_id = uuid.uuid4()
+    qdrant.upsert(
+        collection_name=RAG_CHUNKS,
+        points=[
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector=[1.0] + [0.0] * 383,
+                payload={
+                    "user_id": str(user_id), "document_id": "d1", "content": "irrelevant chunk",
+                    "document_title": "Doc", "source_url": None, "valid_until": None,
                 },
             )
         ],
         wait=True,
     )
 
-    ctx = _ctx(qdrant)
-    result = get_rag_context_impl(ctx, str(user_id), "query")
+    async def fake_web_search(query):
+        return ["web snippet content"]
+
+    ctx = build_tool_context(qdrant, FakeEmbedder(), ScriptedLLM(classification="single", grade="0.1"), fake_web_search)
+    result = await get_rag_context_impl(ctx, str(user_id), "query")
+    assert "web snippet content" in result.context_text
+    assert result.chunks_used == 2
+
+
+@pytest.mark.asyncio
+async def test_get_rag_context_multi_uses_react_loop(qdrant):
+    user_id = uuid.uuid4()
+    qdrant.upsert(
+        collection_name=RAG_CHUNKS,
+        points=[
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector=[1.0] + [0.0] * 383,
+                payload={
+                    "user_id": str(user_id), "document_id": "d1", "content": "multi-step chunk",
+                    "document_title": "Doc", "source_url": None, "valid_until": None,
+                },
+            )
+        ],
+        wait=True,
+    )
+    ctx = _ctx(qdrant, classification="multi", grade="0.9", continue_json='{"enough": true, "next_query": null}')
+    result = await get_rag_context_impl(ctx, str(user_id), "complex multi-part question")
     assert result.chunks_used == 1
-    assert "Relevant chunk content" in result.context_text
-    # hoton-lmr's Phase 5 citation SSE event needs these per-chunk fields, not just the merged text.
-    assert len(result.chunks) == 1
-    assert result.chunks[0].content == "Relevant chunk content"
-    assert result.chunks[0].document_title == "Doc"
+    assert "multi-step chunk" in result.context_text
 
 
 def test_retrieve_chunks_impl_returns_list(qdrant):
@@ -87,7 +164,11 @@ def test_retrieve_chunks_impl_returns_list(qdrant):
 
 
 def test_extract_and_store_memories_impl(qdrant):
-    ctx = build_tool_context(qdrant, FakeEmbedder(), FakeLLM('[{"content": "User likes tea", "type": "fact", "confidence": 0.6}]'))
+    ctx = build_tool_context(
+        qdrant, FakeEmbedder(),
+        FakeLLM('[{"content": "User likes tea", "type": "fact", "confidence": 0.6}]'),
+        _fake_web_search,
+    )
     result = extract_and_store_memories_impl(ctx, str(uuid.uuid4()), "I like tea", "noted")
     assert isinstance(result, ExtractMemoriesResult)
     assert result.stored == 1
