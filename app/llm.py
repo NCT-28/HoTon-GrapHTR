@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+import torch
 from transformers import pipeline
 
 from app.config import get_settings
@@ -24,5 +25,6 @@ class ReasoningLLM:
 @lru_cache
 def get_reasoning_llm() -> ReasoningLLM:
     settings = get_settings()
-    generator = pipeline("text-generation", model=settings.reasoning_model_name)
+    device = 0 if torch.cuda.is_available() else -1
+    generator = pipeline("text-generation", model=settings.reasoning_model_name, device=device)
     return ReasoningLLM(generator=generator)
