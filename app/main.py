@@ -45,6 +45,14 @@ def create_app(qdrant_client=None, embedder=None, browser_client=None) -> FastAP
         ).count
         return {"embed_model_loaded": True, "doc_count": doc_count, "memory_count": memory_count}
 
+    @app.on_event("startup")
+    async def _launch_cleanup_job():
+        import asyncio
+
+        from app.cleanup import start_memory_cleanup_job
+
+        asyncio.create_task(start_memory_cleanup_job(get_client_fn()))
+
     return app
 
 
