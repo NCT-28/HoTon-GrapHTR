@@ -13,8 +13,13 @@ class FakeEmbedder:
         return [[0.1] * 384 for _ in texts]
 
 
+class FakeLLM:
+    def generate(self, prompt, max_new_tokens=256, temperature=0.1):
+        return "[]"
+
+
 def make_client(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder())
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
     return TestClient(app)
 
 

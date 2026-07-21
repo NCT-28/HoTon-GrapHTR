@@ -15,8 +15,13 @@ class FakeEmbedder:
         return [0.1] * 384
 
 
+class FakeLLM:
+    def generate(self, prompt, max_new_tokens=256, temperature=0.1):
+        return "[]"
+
+
 def test_get_profile_returns_default(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder())
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
     client = TestClient(app)
     resp = client.get("/api/profile", headers={"X-User-Id": str(uuid.uuid4())})
     assert resp.status_code == 200
@@ -24,7 +29,7 @@ def test_get_profile_returns_default(qdrant):
 
 
 def test_patch_profile_updates_fields(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder())
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
     client = TestClient(app)
     user_id = str(uuid.uuid4())
 
