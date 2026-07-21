@@ -220,3 +220,58 @@ def build_documents_router(get_client, get_embedder) -> APIRouter:
         return None
 
     return router
+
+
+# --- URL ingest ---
+
+from pydantic import BaseModel
+
+
+class UrlDocumentRequest(BaseModel):
+    url: str
+    title: str | None = None
+
+
+def add_url_route(router: APIRouter, get_client, get_embedder, get_browser_client) -> None:
+    @router.post("/api/documents/url", status_code=status.HTTP_202_ACCEPTED)
+    async def upload_url_document(payload: UrlDocumentRequest, x_user_id: str = Header(...)):
+        if not payload.url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        if not payload.url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="Invalid URL format")
+        if not is_safe_url(payload.url):
+            raise HTTPException(status_code=400, detail="URL targets a blocked or private address")
+
+        browser_client = get_browser_client()
+        text = await browser_client.get_page_text(payload.url)
+
+        doc_id = _uuid.uuid4()
+        client = get_client()
+        embedder = get_embedder()
+        chunk_count = ingest_document(
+            client, embedder, doc_id, _uuid.UUID(x_user_id), text,
+            document_title=payload.title or "Web Document", source_url=payload.url, valid_until=None,
+        )
+
+        client.upsert(
+            collection_name=RAG_DOCUMENTS,
+            points=[
+                PointStruct(
+                    id=str(doc_id),
+                    vector=[0.0],
+                    payload={
+                        "user_id": x_user_id,
+                        "title": payload.title or "Web Document",
+                        "source_type": "url",
+                        "source_url": payload.url,
+                        "file_name": None,
+                        "status": "ready",
+                        "error_msg": None,
+                        "chunk_count": chunk_count,
+                        "created_at": datetime.datetime.utcnow().isoformat(),
+                    },
+                )
+            ],
+            wait=True,
+        )
+        return {"document_id": str(doc_id)}
