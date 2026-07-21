@@ -40,3 +40,43 @@ def test_build_full_rag_context_combines_memory_and_chunks():
     assert "Doc A (https://x.com)" in result
     assert "Chunk body" in result
     assert result.index("[What I know about you]") < result.index("[Knowledge Context]")
+
+
+def test_profile_section_empty_for_default_profile():
+    from app.context import build_profile_context_section
+    from app.profile import UserProfile
+
+    assert build_profile_context_section(UserProfile()) == ""
+
+
+def test_profile_section_renders_non_default_fields():
+    from app.context import build_profile_context_section
+    from app.profile import UserProfile
+
+    profile = UserProfile(level="advanced", style="terse", preferred_lang="vi", project_context="a RAG service")
+    section = build_profile_context_section(profile)
+    assert "[User Context]" in section
+    assert "Expertise level: advanced" in section
+    assert "Communication style: terse" in section
+    assert "Language: vi" in section
+    assert "Current project: a RAG service" in section
+
+
+def test_build_full_context_orders_profile_memory_rag():
+    from app.context import build_full_context
+    from app.profile import UserProfile
+
+    profile = UserProfile(level="advanced")
+    memories = [RetrievedMemory(id="m1", content="User likes Rust", memory_type="fact", confidence=0.7)]
+    chunks = [RetrievedChunk(id="c1", content="Chunk body", document_title="Doc A", source_url=None, similarity=0.9, document_expired=False)]
+
+    result = build_full_context(chunks, memories, profile)
+
+    assert result.index("[User Context]") < result.index("[What I know about you]") < result.index("[Knowledge Context]")
+
+
+def test_build_full_context_all_empty_returns_empty_string():
+    from app.context import build_full_context
+    from app.profile import UserProfile
+
+    assert build_full_context([], [], UserProfile()) == ""

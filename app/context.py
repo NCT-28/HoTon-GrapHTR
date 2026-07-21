@@ -60,3 +60,38 @@ def build_full_rag_context(chunks: list[RetrievedChunk], memories: list[Retrieve
     if chunks:
         parts.append(build_rag_context_section(chunks))
     return "\n\n".join(parts)
+
+
+# --- profile context + full assembly ---
+
+from app.profile import UserProfile
+
+
+def build_profile_context_section(profile: UserProfile) -> str:
+    if profile.level == "unknown" and profile.style == "neutral" and profile.preferred_lang == "auto":
+        return ""
+
+    lines = [
+        "[User Context]",
+        f"Expertise level: {profile.level}",
+        f"Communication style: {profile.style}",
+        f"Language: {profile.preferred_lang}",
+    ]
+    if profile.project_context:
+        lines.append(f"Current project: {profile.project_context}")
+    lines.append("Adapt your responses accordingly.")
+    return "\n".join(lines)
+
+
+def build_full_context(
+    chunks: list[RetrievedChunk], memories: list[RetrievedMemory], profile: UserProfile
+) -> str:
+    parts = []
+    profile_section = build_profile_context_section(profile)
+    if profile_section:
+        parts.append(profile_section)
+    if memories:
+        parts.append(build_memory_context_section(memories))
+    if chunks:
+        parts.append(build_rag_context_section(chunks))
+    return "\n\n".join(parts)
