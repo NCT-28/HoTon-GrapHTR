@@ -9,6 +9,8 @@ from app.config import get_settings
 RAG_DOCUMENTS = "rag_documents"
 RAG_CHUNKS = "rag_chunks"
 USER_MEMORIES = "user_memories"
+USER_PROFILES = "user_profiles"
+PROFILE_SNAPSHOTS = "profile_snapshots"
 
 
 def bootstrap_collections(client: QdrantClient, embed_dim: int) -> None:
@@ -34,6 +36,18 @@ def bootstrap_collections(client: QdrantClient, embed_dim: int) -> None:
         client.create_collection(
             collection_name=USER_MEMORIES,
             vectors_config=VectorParams(size=embed_dim, distance=Distance.COSINE),
+        )
+
+    if USER_PROFILES not in existing:
+        client.create_collection(
+            collection_name=USER_PROFILES,
+            vectors_config=VectorParams(size=1, distance=Distance.COSINE),
+        )
+
+    if PROFILE_SNAPSHOTS not in existing:
+        client.create_collection(
+            collection_name=PROFILE_SNAPSHOTS,
+            vectors_config=VectorParams(size=1, distance=Distance.COSINE),
         )
 
 
