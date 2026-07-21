@@ -128,3 +128,95 @@ def ingest_document(
 
     client.upsert(collection_name=RAG_CHUNKS, points=points, wait=True)
     return len(points)
+
+
+# --- REST layer ---
+
+import datetime
+import uuid as _uuid
+
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile, status
+from qdrant_client.models import FieldCondition, Filter, MatchValue, PointIdsList
+
+from app.qdrant_store import RAG_DOCUMENTS
+
+
+def build_documents_router(get_client, get_embedder) -> APIRouter:
+    router = APIRouter()
+
+    @router.post("/api/documents", status_code=status.HTTP_202_ACCEPTED)
+    async def upload_document(
+        file: UploadFile = File(...),
+        x_user_id: str = Header(...),
+    ):
+        data = await file.read()
+        title, text = process_uploaded_file(file.filename, file.content_type, data)
+
+        doc_id = _uuid.uuid4()
+        client = get_client()
+        embedder = get_embedder()
+
+        chunk_count = ingest_document(
+            client, embedder, doc_id, _uuid.UUID(x_user_id), text,
+            document_title=title, source_url=None, valid_until=None,
+        )
+
+        client.upsert(
+            collection_name=RAG_DOCUMENTS,
+            points=[
+                PointStruct(
+                    id=str(doc_id),
+                    vector=[0.0],
+                    payload={
+                        "user_id": x_user_id,
+                        "title": title,
+                        "source_type": "file",
+                        "source_url": None,
+                        "file_name": file.filename,
+                        "status": "ready",
+                        "error_msg": None,
+                        "chunk_count": chunk_count,
+                        "created_at": datetime.datetime.utcnow().isoformat(),
+                    },
+                )
+            ],
+            wait=True,
+        )
+
+        return {"document_id": str(doc_id)}
+
+    @router.get("/api/documents")
+    async def list_documents(x_user_id: str = Header(...)):
+        client = get_client()
+        points, _ = client.scroll(
+            collection_name=RAG_DOCUMENTS,
+            scroll_filter=Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=x_user_id))]),
+            limit=1000,
+        )
+        docs = [{"id": p.id, **p.payload} for p in points]
+        docs.sort(key=lambda d: d["created_at"], reverse=True)
+        return {"documents": docs}
+
+    @router.get("/api/documents/{document_id}")
+    async def get_document(document_id: str, x_user_id: str = Header(...)):
+        client = get_client()
+        points = client.retrieve(collection_name=RAG_DOCUMENTS, ids=[document_id])
+        if not points or points[0].payload.get("user_id") != x_user_id:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return {"id": points[0].id, **points[0].payload}
+
+    @router.delete("/api/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def delete_document(document_id: str, x_user_id: str = Header(...)):
+        client = get_client()
+        points = client.retrieve(collection_name=RAG_DOCUMENTS, ids=[document_id])
+        if not points or points[0].payload.get("user_id") != x_user_id:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        client.delete(collection_name=RAG_DOCUMENTS, points_selector=PointIdsList(points=[document_id]))
+        client.delete(
+            collection_name=RAG_CHUNKS,
+            points_selector=Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]),
+        )
+        return None
+
+    return router
