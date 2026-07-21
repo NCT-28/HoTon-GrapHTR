@@ -73,6 +73,10 @@ def test_get_rag_context_includes_matching_chunk(qdrant):
     result = get_rag_context_impl(ctx, str(user_id), "query")
     assert result.chunks_used == 1
     assert "Relevant chunk content" in result.context_text
+    # hoton-lmr's Phase 5 citation SSE event needs these per-chunk fields, not just the merged text.
+    assert len(result.chunks) == 1
+    assert result.chunks[0].content == "Relevant chunk content"
+    assert result.chunks[0].document_title == "Doc"
 
 
 def test_retrieve_chunks_impl_returns_list(qdrant):

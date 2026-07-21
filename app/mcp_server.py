@@ -24,12 +24,6 @@ def build_tool_context(client: QdrantClient, embedder, llm) -> ToolContext:
     return ToolContext(client=client, embedder=embedder, llm=llm)
 
 
-class RagContextResult(BaseModel):
-    context_text: str
-    chunks_used: int
-    memories_used: int
-
-
 class ChunkOut(BaseModel):
     id: str
     content: str
@@ -39,8 +33,32 @@ class ChunkOut(BaseModel):
     document_expired: bool
 
 
+class RagContextResult(BaseModel):
+    context_text: str
+    chunks_used: int
+    memories_used: int
+    # Individual chunks (not just the merged text) — hoton-lmr's Phase 5 citation
+    # feature ("rag_sources" SSE event + per-turn chunk-id logging) needs
+    # document_title/source_url/similarity/id per chunk, not a pre-joined string.
+    chunks: list[ChunkOut]
+
+
 class RetrieveChunksResult(BaseModel):
     chunks: list[ChunkOut]
+
+
+def _to_chunk_out(chunks) -> list[ChunkOut]:
+    return [
+        ChunkOut(
+            id=c.id,
+            content=c.content,
+            document_title=c.document_title,
+            source_url=c.source_url,
+            similarity=c.similarity,
+            document_expired=c.document_expired,
+        )
+        for c in chunks
+    ]
 
 
 class ExtractMemoriesResult(BaseModel):
@@ -62,26 +80,19 @@ def get_rag_context_impl(ctx: ToolContext, user_id: str, query: str) -> RagConte
     profile = get_or_create_profile(ctx.client, uid)
 
     context_text = build_full_context(chunks, memories, profile)
-    return RagContextResult(context_text=context_text, chunks_used=len(chunks), memories_used=len(memories))
+    return RagContextResult(
+        context_text=context_text,
+        chunks_used=len(chunks),
+        memories_used=len(memories),
+        chunks=_to_chunk_out(chunks),
+    )
 
 
 def retrieve_chunks_impl(
     ctx: ToolContext, user_id: str, query: str, top_k: int = 5, min_similarity: float = 0.0
 ) -> RetrieveChunksResult:
     chunks = retrieve_chunks(ctx.client, ctx.embedder, uuid.UUID(user_id), query, top_k, min_similarity)
-    return RetrieveChunksResult(
-        chunks=[
-            ChunkOut(
-                id=c.id,
-                content=c.content,
-                document_title=c.document_title,
-                source_url=c.source_url,
-                similarity=c.similarity,
-                document_expired=c.document_expired,
-            )
-            for c in chunks
-        ]
-    )
+    return RetrieveChunksResult(chunks=_to_chunk_out(chunks))
 
 
 def extract_and_store_memories_impl(
