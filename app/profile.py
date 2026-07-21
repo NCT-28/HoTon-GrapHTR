@@ -208,3 +208,45 @@ def maybe_snapshot_profile(client: QdrantClient, user_id: uuid.UUID, profile: Us
         ],
         wait=True,
     )
+
+
+# --- REST layer ---
+
+from fastapi import APIRouter, Header
+from pydantic import BaseModel
+
+
+class ProfileUpdateRequest(BaseModel):
+    level: str | None = None
+    style: str | None = None
+    preferred_lang: str | None = None
+    project_context: str | None = None
+
+
+def build_profile_router(get_client) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/api/profile")
+    async def get_profile(x_user_id: str = Header(...)):
+        profile = get_or_create_profile(get_client(), uuid.UUID(x_user_id))
+        return profile.__dict__
+
+    @router.patch("/api/profile")
+    async def patch_profile(req: ProfileUpdateRequest, x_user_id: str = Header(...)):
+        client = get_client()
+        user_id = uuid.UUID(x_user_id)
+        profile = get_or_create_profile(client, user_id)
+
+        if req.level is not None:
+            profile.level = req.level
+        if req.style is not None:
+            profile.style = req.style
+        if req.preferred_lang is not None:
+            profile.preferred_lang = req.preferred_lang
+        if req.project_context is not None:
+            profile.project_context = req.project_context or None
+
+        upsert_profile(client, user_id, profile)
+        return profile.__dict__
+
+    return router

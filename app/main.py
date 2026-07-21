@@ -5,6 +5,7 @@ from app.config import get_settings
 from app.documents import add_url_route, build_documents_router
 from app.embeddings import get_embedder
 from app.memory import build_memory_router
+from app.profile import build_profile_router
 from app.qdrant_store import RAG_DOCUMENTS, get_qdrant_client
 
 
@@ -21,6 +22,7 @@ def create_app(qdrant_client=None, embedder=None, browser_client=None) -> FastAP
     add_url_route(router, get_client_fn, get_embedder_fn, get_browser_fn)
     app.include_router(router)
     app.include_router(build_memory_router(get_client_fn))
+    app.include_router(build_profile_router(get_client_fn))
 
     @app.get("/health")
     async def health():
