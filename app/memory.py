@@ -278,3 +278,58 @@ def retrieve_memories(
         RetrievedMemory(id=str(point_id), content=payload["content"], memory_type=payload["memory_type"], confidence=eff)
         for eff, _score, point_id, payload in top
     ]
+
+
+# --- REST layer ---
+
+from fastapi import APIRouter, Header, HTTPException, status
+from qdrant_client.models import PointIdsList
+
+
+def list_memories(client: QdrantClient, user_id: _uuid.UUID) -> list[dict]:
+    points, _ = client.scroll(
+        collection_name=USER_MEMORIES,
+        scroll_filter=Filter(
+            must=[
+                FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
+                FieldCondition(key="status", match=MatchValue(value="active")),
+            ]
+        ),
+        limit=1000,
+    )
+    memories = [
+        {
+            "id": p.id,
+            "content": p.payload["content"],
+            "memory_type": p.payload["memory_type"],
+            "confidence": p.payload["confidence"],
+            "created_at": p.payload["created_at"],
+        }
+        for p in points
+    ]
+    memories.sort(key=lambda m: (m["confidence"], m["created_at"]), reverse=True)
+    return memories
+
+
+def delete_memory(client: QdrantClient, memory_id: str, user_id: _uuid.UUID) -> bool:
+    points = client.retrieve(collection_name=USER_MEMORIES, ids=[memory_id])
+    if not points or points[0].payload.get("user_id") != str(user_id):
+        return False
+    client.delete(collection_name=USER_MEMORIES, points_selector=PointIdsList(points=[memory_id]))
+    return True
+
+
+def build_memory_router(get_client) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/api/memories")
+    async def get_memories(x_user_id: str = Header(...)):
+        return list_memories(get_client(), _uuid.UUID(x_user_id))
+
+    @router.delete("/api/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def remove_memory(memory_id: str, x_user_id: str = Header(...)):
+        if not delete_memory(get_client(), memory_id, _uuid.UUID(x_user_id)):
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return None
+
+    return router
