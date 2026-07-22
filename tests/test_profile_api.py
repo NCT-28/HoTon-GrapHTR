@@ -44,3 +44,13 @@ def test_patch_profile_updates_fields(qdrant, graph_store):
 
     fetched = client.get("/api/profile", headers={"X-User-Id": user_id})
     assert fetched.json()["level"] == "advanced"
+
+
+def test_get_profile_records_usage(qdrant, graph_store, usage_store):
+    app = create_app(
+        qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store, usage_store=usage_store,
+    )
+    client = TestClient(app)
+    client.get("/api/profile", headers={"X-User-Id": str(uuid.uuid4())})
+
+    assert any(e["tool_name"] == "get_profile" for e in usage_store.events)

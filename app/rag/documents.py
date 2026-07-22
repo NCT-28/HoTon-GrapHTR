@@ -10,6 +10,7 @@ from qdrant_client.models import PointStruct
 
 from app.rag.chunker import DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP, chunk_text
 from app.clients.qdrant_store import RAG_CHUNKS
+from app.dashboard.tracker import track_usage
 
 _BLOCKED_HOSTS = {
     "169.254.169.254",
@@ -143,7 +144,7 @@ from app.graph.graph_pipeline import run_entity_extraction_and_linking
 from app.clients.qdrant_store import RAG_DOCUMENTS
 
 
-def build_documents_router(get_client, get_embedder, get_graph_store=None, get_llm=None) -> APIRouter:
+def build_documents_router(get_client, get_embedder, get_graph_store=None, get_llm=None, get_usage_store=None) -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/documents", status_code=status.HTTP_202_ACCEPTED)
@@ -151,6 +152,7 @@ def build_documents_router(get_client, get_embedder, get_graph_store=None, get_l
         file: UploadFile = File(...),
         x_user_id: str = Header(...),
     ):
+      with track_usage(get_usage_store() if get_usage_store else None, "upload_document", x_user_id):
         data = await file.read()
         title, text = process_uploaded_file(file.filename, file.content_type, data)
 
@@ -194,37 +196,40 @@ def build_documents_router(get_client, get_embedder, get_graph_store=None, get_l
 
     @router.get("/api/documents")
     async def list_documents(x_user_id: str = Header(...)):
-        client = get_client()
-        points, _ = client.scroll(
-            collection_name=RAG_DOCUMENTS,
-            scroll_filter=Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=x_user_id))]),
-            limit=1000,
-        )
-        docs = [{"id": p.id, **p.payload} for p in points]
-        docs.sort(key=lambda d: d["created_at"], reverse=True)
-        return {"documents": docs}
+        with track_usage(get_usage_store() if get_usage_store else None, "list_documents", x_user_id):
+            client = get_client()
+            points, _ = client.scroll(
+                collection_name=RAG_DOCUMENTS,
+                scroll_filter=Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=x_user_id))]),
+                limit=1000,
+            )
+            docs = [{"id": p.id, **p.payload} for p in points]
+            docs.sort(key=lambda d: d["created_at"], reverse=True)
+            return {"documents": docs}
 
     @router.get("/api/documents/{document_id}")
     async def get_document(document_id: str, x_user_id: str = Header(...)):
-        client = get_client()
-        points = client.retrieve(collection_name=RAG_DOCUMENTS, ids=[document_id])
-        if not points or points[0].payload.get("user_id") != x_user_id:
-            raise HTTPException(status_code=404, detail="Document not found")
-        return {"id": points[0].id, **points[0].payload}
+        with track_usage(get_usage_store() if get_usage_store else None, "get_document", x_user_id):
+            client = get_client()
+            points = client.retrieve(collection_name=RAG_DOCUMENTS, ids=[document_id])
+            if not points or points[0].payload.get("user_id") != x_user_id:
+                raise HTTPException(status_code=404, detail="Document not found")
+            return {"id": points[0].id, **points[0].payload}
 
     @router.delete("/api/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
     async def delete_document(document_id: str, x_user_id: str = Header(...)):
-        client = get_client()
-        points = client.retrieve(collection_name=RAG_DOCUMENTS, ids=[document_id])
-        if not points or points[0].payload.get("user_id") != x_user_id:
-            raise HTTPException(status_code=404, detail="Document not found")
+        with track_usage(get_usage_store() if get_usage_store else None, "delete_document", x_user_id):
+            client = get_client()
+            points = client.retrieve(collection_name=RAG_DOCUMENTS, ids=[document_id])
+            if not points or points[0].payload.get("user_id") != x_user_id:
+                raise HTTPException(status_code=404, detail="Document not found")
 
-        client.delete(collection_name=RAG_DOCUMENTS, points_selector=PointIdsList(points=[document_id]))
-        client.delete(
-            collection_name=RAG_CHUNKS,
-            points_selector=Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]),
-        )
-        return None
+            client.delete(collection_name=RAG_DOCUMENTS, points_selector=PointIdsList(points=[document_id]))
+            client.delete(
+                collection_name=RAG_CHUNKS,
+                points_selector=Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]),
+            )
+            return None
 
     return router
 
@@ -239,9 +244,13 @@ class UrlDocumentRequest(BaseModel):
     title: str | None = None
 
 
-def add_url_route(router: APIRouter, get_client, get_embedder, get_browser_client, get_graph_store=None, get_llm=None) -> None:
+def add_url_route(
+    router: APIRouter, get_client, get_embedder, get_browser_client,
+    get_graph_store=None, get_llm=None, get_usage_store=None,
+) -> None:
     @router.post("/api/documents/url", status_code=status.HTTP_202_ACCEPTED)
     async def upload_url_document(payload: UrlDocumentRequest, x_user_id: str = Header(...)):
+      with track_usage(get_usage_store() if get_usage_store else None, "upload_url_document", x_user_id):
         if not payload.url:
             raise HTTPException(status_code=400, detail="URL is required")
         if not payload.url.startswith(("http://", "https://")):

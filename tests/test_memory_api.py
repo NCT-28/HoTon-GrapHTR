@@ -82,3 +82,13 @@ def test_delete_memory_wrong_user_returns_404(qdrant, graph_store):
     client = TestClient(app)
     resp = client.delete(f"/api/memories/{memory_id}", headers={"X-User-Id": str(uuid.uuid4())})
     assert resp.status_code == 404
+
+
+def test_get_memories_records_usage(qdrant, graph_store, usage_store):
+    app = create_app(
+        qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store, usage_store=usage_store,
+    )
+    client = TestClient(app)
+    client.get("/api/memories", headers={"X-User-Id": str(uuid.uuid4())})
+
+    assert any(e["tool_name"] == "get_memories" for e in usage_store.events)

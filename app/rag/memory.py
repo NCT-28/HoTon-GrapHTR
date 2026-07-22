@@ -285,6 +285,8 @@ def retrieve_memories(
 from fastapi import APIRouter, Header, HTTPException, status
 from qdrant_client.models import PointIdsList
 
+from app.dashboard.tracker import track_usage
+
 
 def list_memories(client: QdrantClient, user_id: _uuid.UUID) -> list[dict]:
     points, _ = client.scroll(
@@ -319,25 +321,27 @@ def delete_memory(client: QdrantClient, memory_id: str, user_id: _uuid.UUID) -> 
     return True
 
 
-def build_memory_router(get_client) -> APIRouter:
+def build_memory_router(get_client, get_usage_store=None) -> APIRouter:
     router = APIRouter()
 
     @router.get("/api/memories")
     async def get_memories(x_user_id: str = Header(...)):
-        try:
-            user_id = _uuid.UUID(x_user_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid X-User-Id header")
-        return list_memories(get_client(), user_id)
+        with track_usage(get_usage_store() if get_usage_store else None, "get_memories", x_user_id):
+            try:
+                user_id = _uuid.UUID(x_user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid X-User-Id header")
+            return list_memories(get_client(), user_id)
 
     @router.delete("/api/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
     async def remove_memory(memory_id: str, x_user_id: str = Header(...)):
-        try:
-            user_id = _uuid.UUID(x_user_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid X-User-Id header")
-        if not delete_memory(get_client(), memory_id, user_id):
-            raise HTTPException(status_code=404, detail="Memory not found")
-        return None
+        with track_usage(get_usage_store() if get_usage_store else None, "remove_memory", x_user_id):
+            try:
+                user_id = _uuid.UUID(x_user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid X-User-Id header")
+            if not delete_memory(get_client(), memory_id, user_id):
+                raise HTTPException(status_code=404, detail="Memory not found")
+            return None
 
     return router

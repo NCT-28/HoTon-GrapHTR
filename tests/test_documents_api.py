@@ -64,3 +64,13 @@ def test_delete_document(qdrant, graph_store):
 
     get_resp = client.get(f"/api/documents/{doc_id}", headers={"X-User-Id": user_id})
     assert get_resp.status_code == 404
+
+
+def test_list_documents_records_usage(qdrant, graph_store, usage_store):
+    app = create_app(
+        qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store, usage_store=usage_store,
+    )
+    client = TestClient(app)
+    client.get("/api/documents", headers={"X-User-Id": str(uuid.uuid4())})
+
+    assert any(e["tool_name"] == "list_documents" for e in usage_store.events)
