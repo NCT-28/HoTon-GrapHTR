@@ -18,13 +18,13 @@ class FakeLLM:
         return "[]"
 
 
-def make_client(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
+def make_client(qdrant, graph_store):
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
     return TestClient(app)
 
 
-def test_upload_document_then_appears_in_list(qdrant):
-    client = make_client(qdrant)
+def test_upload_document_then_appears_in_list(qdrant, graph_store):
+    client = make_client(qdrant, graph_store)
     user_id = str(uuid.uuid4())
 
     resp = client.post(
@@ -42,15 +42,15 @@ def test_upload_document_then_appears_in_list(qdrant):
     assert next(d for d in docs if d["id"] == doc_id)["status"] == "ready"
 
 
-def test_get_document_not_found(qdrant):
-    client = make_client(qdrant)
+def test_get_document_not_found(qdrant, graph_store):
+    client = make_client(qdrant, graph_store)
     user_id = str(uuid.uuid4())
     resp = client.get(f"/api/documents/{uuid.uuid4()}", headers={"X-User-Id": user_id})
     assert resp.status_code == 404
 
 
-def test_delete_document(qdrant):
-    client = make_client(qdrant)
+def test_delete_document(qdrant, graph_store):
+    client = make_client(qdrant, graph_store)
     user_id = str(uuid.uuid4())
     resp = client.post(
         "/api/documents",

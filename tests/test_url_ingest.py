@@ -29,8 +29,11 @@ def test_browser_client_calls_expected_endpoint():
     assert client.base_url == "http://browser:8090"
 
 
-def test_upload_url_rejects_private_targets(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), browser_client=FakeBrowserClient(), llm=FakeLLM())
+def test_upload_url_rejects_private_targets(qdrant, graph_store):
+    app = create_app(
+        qdrant_client=qdrant, embedder=FakeEmbedder(), browser_client=FakeBrowserClient(), llm=FakeLLM(),
+        graph_store=graph_store,
+    )
     client = TestClient(app)
     resp = client.post(
         "/api/documents/url",
@@ -40,8 +43,11 @@ def test_upload_url_rejects_private_targets(qdrant):
     assert resp.status_code == 400
 
 
-def test_upload_url_ingests_page_text(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), browser_client=FakeBrowserClient(), llm=FakeLLM())
+def test_upload_url_ingests_page_text(qdrant, graph_store):
+    app = create_app(
+        qdrant_client=qdrant, embedder=FakeEmbedder(), browser_client=FakeBrowserClient(), llm=FakeLLM(),
+        graph_store=graph_store,
+    )
     client = TestClient(app)
     user_id = str(uuid.uuid4())
     resp = client.post(

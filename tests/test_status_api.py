@@ -16,8 +16,8 @@ class FakeLLM:
         return "[]"
 
 
-def test_status_reports_zero_counts_for_new_user(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
+def test_status_reports_zero_counts_for_new_user(qdrant, graph_store):
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
     client = TestClient(app)
     resp = client.get("/api/status", headers={"X-User-Id": str(uuid.uuid4())})
     assert resp.status_code == 200

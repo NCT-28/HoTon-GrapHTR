@@ -20,16 +20,16 @@ class FakeLLM:
         return "[]"
 
 
-def test_get_profile_returns_default(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
+def test_get_profile_returns_default(qdrant, graph_store):
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
     client = TestClient(app)
     resp = client.get("/api/profile", headers={"X-User-Id": str(uuid.uuid4())})
     assert resp.status_code == 200
     assert resp.json()["level"] == "unknown"
 
 
-def test_patch_profile_updates_fields(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
+def test_patch_profile_updates_fields(qdrant, graph_store):
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
     client = TestClient(app)
     user_id = str(uuid.uuid4())
 

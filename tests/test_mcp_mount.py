@@ -18,8 +18,8 @@ class FakeLLM:
         return "[]"
 
 
-def test_mcp_endpoint_is_mounted(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
+def test_mcp_endpoint_is_mounted(qdrant, graph_store):
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
     with TestClient(app) as client:
         # A GET on the MCP endpoint without a proper MCP session should not 404 —
         # it's a real mounted route (exact response shape depends on the MCP SDK,
@@ -28,8 +28,8 @@ def test_mcp_endpoint_is_mounted(qdrant):
         assert resp.status_code != 404
 
 
-def test_health_still_works_alongside_mcp(qdrant):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM())
+def test_health_still_works_alongside_mcp(qdrant, graph_store):
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
     with TestClient(app) as client:
         resp = client.get("/health")
         assert resp.status_code == 200
