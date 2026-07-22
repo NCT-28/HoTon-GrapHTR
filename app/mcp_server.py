@@ -15,6 +15,10 @@ from app.profile import get_or_create_profile, update_profile_from_message
 from app.react import run_multi_step_retrieval
 from app.retrieval import retrieve_chunks
 from app.routing import QueryComplexity, classify_query
+from app.code_graph_store import GraphStore
+from app.graph_query import bfs_query, explain_node, shortest_path
+from app.repo_source import resolve_repo_source
+from app.repo_watcher import RepoWatcherManager
 
 
 @dataclass
@@ -23,10 +27,18 @@ class ToolContext:
     embedder: object
     llm: object
     web_search_fn: object  # Callable[[str], Awaitable[list[str]]]
+    graph_store: GraphStore | None = None
+    watcher_manager: RepoWatcherManager | None = None
 
 
-def build_tool_context(client: QdrantClient, embedder, llm, web_search_fn) -> ToolContext:
-    return ToolContext(client=client, embedder=embedder, llm=llm, web_search_fn=web_search_fn)
+def build_tool_context(
+    client: QdrantClient, embedder, llm, web_search_fn,
+    graph_store: GraphStore | None = None, watcher_manager: RepoWatcherManager | None = None,
+) -> ToolContext:
+    return ToolContext(
+        client=client, embedder=embedder, llm=llm, web_search_fn=web_search_fn,
+        graph_store=graph_store, watcher_manager=watcher_manager,
+    )
 
 
 class ChunkOut(BaseModel):
@@ -76,6 +88,39 @@ class UpdateProfileResult(BaseModel):
 
 class EmbedTextResult(BaseModel):
     embedding: list[float]
+
+
+class IngestCodebaseResult(BaseModel):
+    repo_id: str
+    symbol_count: int
+    edge_count: int
+
+
+class GraphNodeOut(BaseModel):
+    id: str
+    name: str
+    kind: str | None = None
+    file_path: str | None = None
+    start_line: int | None = None
+    end_line: int | None = None
+
+
+class GraphEdgeOut(BaseModel):
+    source: str
+    target: str
+    type: str
+
+
+class QueryCodeGraphResult(BaseModel):
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+
+
+def _to_node_out(node: dict) -> GraphNodeOut:
+    return GraphNodeOut(
+        id=node["id"], name=node["name"], kind=node.get("kind"), file_path=node.get("file_path"),
+        start_line=node.get("start_line"), end_line=node.get("end_line"),
+    )
 
 
 RAG_TOP_K = 5
@@ -138,6 +183,42 @@ def embed_text_impl(ctx: ToolContext, text: str) -> EmbedTextResult:
     return EmbedTextResult(embedding=ctx.embedder.embed_single(text))
 
 
+def ingest_codebase_impl(ctx: ToolContext, user_id: str, source: str) -> IngestCodebaseResult:
+    repo_id = str(uuid.uuid4())
+    local_path = resolve_repo_source(source, repo_id)
+    ctx.watcher_manager.reindex(user_id, repo_id, local_path)
+    ctx.watcher_manager.watch(user_id, repo_id, local_path)
+    nodes, edges = ctx.graph_store.get_subgraph(user_id, repo_id)
+    return IngestCodebaseResult(repo_id=repo_id, symbol_count=len(nodes), edge_count=len(edges))
+
+
+def query_code_graph_impl(
+    ctx: ToolContext, user_id: str, repo_id: str, mode: str,
+    keyword: str = "", from_name: str = "", to_name: str = "", name: str = "", depth: int = 2,
+) -> QueryCodeGraphResult:
+    nodes, edges = ctx.graph_store.get_subgraph(user_id, repo_id)
+
+    if mode == "query":
+        result_nodes, result_edges = bfs_query(nodes, edges, keyword, depth)
+    elif mode == "path":
+        result = shortest_path(nodes, edges, from_name, to_name)
+        result_nodes, result_edges = result if result else ([], [])
+    elif mode == "explain":
+        result = explain_node(nodes, edges, name)
+        if result is None:
+            result_nodes, result_edges = [], []
+        else:
+            center, neighbors, related_edges = result
+            result_nodes, result_edges = [center, *neighbors], related_edges
+    else:
+        raise ValueError(f"unknown query_code_graph mode: {mode}")
+
+    return QueryCodeGraphResult(
+        nodes=[_to_node_out(n) for n in result_nodes],
+        edges=[GraphEdgeOut(source=e["source"], target=e["target"], type=e["type"]) for e in result_edges],
+    )
+
+
 def build_mcp_server(ctx: ToolContext) -> FastMCP:
     mcp = FastMCP("hoton-rag", stateless_http=True, json_response=True)
 
@@ -165,5 +246,19 @@ def build_mcp_server(ctx: ToolContext) -> FastMCP:
     def embed_text(text: str) -> EmbedTextResult:
         """Raw embedding, for workflow embedding nodes."""
         return embed_text_impl(ctx, text)
+
+    @mcp.tool()
+    def ingest_codebase(user_id: str, source: str) -> IngestCodebaseResult:
+        """Parse a local path or git URL into the code knowledge graph and start watching it for changes."""
+        return ingest_codebase_impl(ctx, user_id, source)
+
+    @mcp.tool()
+    def query_code_graph(
+        user_id: str, repo_id: str, mode: str,
+        keyword: str = "", from_name: str = "", to_name: str = "", name: str = "", depth: int = 2,
+    ) -> QueryCodeGraphResult:
+        """Query the code graph for a repo. mode='query' (keyword BFS from `keyword`),
+        'path' (shortest path from `from_name` to `to_name`), 'explain' (node + neighbors by `name`)."""
+        return query_code_graph_impl(ctx, user_id, repo_id, mode, keyword, from_name, to_name, name, depth)
 
     return mcp
