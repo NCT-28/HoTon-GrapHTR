@@ -59,8 +59,8 @@ def create_app(
 
     app = FastAPI(title="hoton-rag", lifespan=lifespan)
 
-    router = build_documents_router(get_client_fn, get_embedder_fn)
-    add_url_route(router, get_client_fn, get_embedder_fn, get_browser_fn)
+    router = build_documents_router(get_client_fn, get_embedder_fn, lambda: resolved_graph_store, get_llm_fn)
+    add_url_route(router, get_client_fn, get_embedder_fn, get_browser_fn, lambda: resolved_graph_store, get_llm_fn)
     app.include_router(router)
     app.include_router(build_memory_router(get_client_fn))
     app.include_router(build_profile_router(get_client_fn))

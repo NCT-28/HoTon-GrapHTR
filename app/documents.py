@@ -132,16 +132,18 @@ def ingest_document(
 
 # --- REST layer ---
 
+import asyncio
 import datetime
 import uuid as _uuid
 
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile, status
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointIdsList
 
+from app.graph_pipeline import run_entity_extraction_and_linking
 from app.qdrant_store import RAG_DOCUMENTS
 
 
-def build_documents_router(get_client, get_embedder) -> APIRouter:
+def build_documents_router(get_client, get_embedder, get_graph_store=None, get_llm=None) -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/documents", status_code=status.HTTP_202_ACCEPTED)
@@ -182,6 +184,11 @@ def build_documents_router(get_client, get_embedder) -> APIRouter:
             ],
             wait=True,
         )
+
+        if get_graph_store is not None and get_llm is not None:
+            asyncio.create_task(
+                run_entity_extraction_and_linking(get_graph_store(), get_llm(), embedder, x_user_id, str(doc_id), text)
+            )
 
         return {"document_id": str(doc_id)}
 
@@ -232,7 +239,7 @@ class UrlDocumentRequest(BaseModel):
     title: str | None = None
 
 
-def add_url_route(router: APIRouter, get_client, get_embedder, get_browser_client) -> None:
+def add_url_route(router: APIRouter, get_client, get_embedder, get_browser_client, get_graph_store=None, get_llm=None) -> None:
     @router.post("/api/documents/url", status_code=status.HTTP_202_ACCEPTED)
     async def upload_url_document(payload: UrlDocumentRequest, x_user_id: str = Header(...)):
         if not payload.url:
@@ -274,4 +281,10 @@ def add_url_route(router: APIRouter, get_client, get_embedder, get_browser_clien
             ],
             wait=True,
         )
+
+        if get_graph_store is not None and get_llm is not None:
+            asyncio.create_task(
+                run_entity_extraction_and_linking(get_graph_store(), get_llm(), embedder, x_user_id, str(doc_id), text)
+            )
+
         return {"document_id": str(doc_id)}
