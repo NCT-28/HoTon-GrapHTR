@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     rag_port: int = 8030
     chunk_size: int = 1800
     chunk_overlap: int = 180
+    neo4j_url: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "changeme"
+    code_repos_dir: str = "./repos"
 
     class Config:
         env_file = ".env"
