@@ -13,6 +13,13 @@
   .card .lbl { font-size: 11px; color: #7982a9; margin-top: 2px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
   .up { background: #9ece6a; } .down { background: #f7768e; }
+  .spark { display: block; margin-top: 6px; }
+
+  /* KPI row — headline numbers, proportional figures (never tabular-nums at this size) */
+  .kpi-tile { background: #16161e; border: 1px solid #2a2e42; border-radius: 8px; padding: 14px; border-top: 2px solid var(--kpi-accent, #7aa2f7); }
+  .kpi-label { font-size: 11px; color: #7982a9; }
+  .kpi-value { font-size: 26px; font-weight: 600; color: #c0caf5; margin-top: 4px; }
+  .kpi-sub { font-size: 11px; color: #7982a9; margin-top: 2px; }
   .row { display: flex; gap: 16px; }
   .col { flex: 1; background: #16161e; border: 1px solid #2a2e42; border-radius: 8px; padding: 14px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -20,38 +27,133 @@
   td { padding: 4px 8px; border-bottom: 1px solid #20222f; }
   .empty { color: #565f89; font-style: italic; padding: 8px; }
   footer { font-size: 11px; color: #565f89; margin-top: 16px; }
+
+  /* bar chart — sequential single hue (magnitude), status accent for errors */
+  .chart-card { background: #16161e; border: 1px solid #2a2e42; border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+  .chart-card b { font-size: 12px; }
+  .bar-chart { margin-top: 10px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+  .bar-row:focus-visible { outline: 1px solid #7aa2f7; outline-offset: 2px; border-radius: 4px; }
+  .bar-label { width: 200px; flex-shrink: 0; font-size: 12px; color: #c0caf5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+  .bar-track { flex: 1; height: 20px; background: #20222f; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #7aa2f7; border-radius: 0 4px 4px 0; }
+  .bar-fill.amber { background: #e0af68; }
+  .bar-row.hover .bar-fill { filter: brightness(1.25); }
+  .bar-value { width: 52px; flex-shrink: 0; text-align: right; font-size: 11px; color: #c0caf5; font-variant-numeric: tabular-nums; }
+  .err-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: #f7768e; flex-shrink: 0; }
+  .err-dot { width: 6px; height: 6px; border-radius: 50%; background: #f7768e; display: inline-block; }
+  #chart-tooltip { position: fixed; display: none; background: #0f0f17; border: 1px solid #2a2e42; border-radius: 6px; padding: 6px 10px; font-size: 12px; pointer-events: none; z-index: 100; white-space: nowrap; }
+  #chart-tooltip .tt-value { font-weight: 600; color: #c0caf5; }
+  #chart-tooltip .tt-label { color: #7982a9; margin-left: 6px; }
 </style>
 </head>
 <body>
 <h1>hoton-rag dashboard</h1>
 
+<div class="grid" id="kpi"></div>
+
 <h2>Health</h2>
 <div class="grid" id="health"></div>
 
 <h2>Storage</h2>
+<div class="chart-card">
+  <b>Qdrant collections — points by collection</b>
+  <div class="bar-chart" id="storage-chart"></div>
+</div>
 <div class="row">
   <div class="col"><b style="font-size:12px">Qdrant collections</b><table id="storage"></table></div>
   <div class="col"><b style="font-size:12px">Neo4j graph (by project)</b><table id="by-project"></table></div>
 </div>
 
 <h2>Tool / route usage (last 24h)</h2>
+<div class="chart-card">
+  <b>Calls by tool / route</b>
+  <div class="bar-chart" id="tool-usage-chart"></div>
+</div>
 <div class="col"><table id="tool-usage"></table></div>
 
 <h2>By user (last 24h)</h2>
 <div class="col"><table id="by-user"></table></div>
 
 <footer>Auto-refreshes every 7s</footer>
+<div id="chart-tooltip"><span class="tt-value"></span><span class="tt-label"></span></div>
 
 <script>
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// Compact number for stat-tile values (1284 -> "1.3K"). Proportional figures at
+// this size — never tabular-nums, which loosens display-size digits.
+function fmtCompact(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(n);
+}
+
+function renderKpi(data) {
+  const totalNodes = data.by_project.reduce((s, p) => s + (p.node_count || 0), 0);
+  const totalEdges = data.by_project.reduce((s, p) => s + (p.edge_count || 0), 0);
+  const totalCalls = data.tool_usage.reduce((s, t) => s + (t.calls || 0), 0);
+  const totalErrors = data.tool_usage.reduce((s, t) => s + (t.errors || 0), 0);
+  const totalVectors = data.storage.reduce((s, c) => s + (c.points || 0), 0);
+
+  const tiles = [
+    { label: 'Code graph', value: fmtCompact(totalNodes), sub: `${fmtCompact(totalEdges)} edges`, accent: '#7aa2f7' },
+    { label: 'Tool calls (24h)', value: fmtCompact(totalCalls), sub: `${data.tool_usage.length} tool${data.tool_usage.length === 1 ? '' : 's'} active`, accent: '#e0af68' },
+    { label: 'Errors (24h)', value: fmtCompact(totalErrors), sub: totalErrors ? 'needs attention' : 'clean', accent: totalErrors ? '#f7768e' : '#9ece6a' },
+    { label: 'Vectors stored', value: fmtCompact(totalVectors), sub: `${data.storage.length} collections`, accent: '#bb9af7' },
+  ];
+
+  document.getElementById('kpi').innerHTML = tiles.map(t => `
+    <div class="kpi-tile" style="--kpi-accent:${t.accent}">
+      <div class="kpi-label">${esc(t.label)}</div>
+      <div class="kpi-value">${esc(t.value)}</div>
+      <div class="kpi-sub">${esc(t.sub)}</div>
+    </div>
+  `).join('');
+}
+
+// Last ~20 latency samples per service, accumulated client-side across polls —
+// no history endpoint needed. 12px-tall sparkline: de-emphasis line, current
+// point in the status accent (spec: marks-and-anatomy.md trend contract).
+const latencyHistory = {};
+
+function pushLatency(name, ms) {
+  if (ms == null) return;
+  const arr = latencyHistory[name] || (latencyHistory[name] = []);
+  arr.push(ms);
+  if (arr.length > 20) arr.shift();
+}
+
+function sparklineSvg(values, dotColor) {
+  if (values.length < 2) return '';
+  const w = 64, h = 16, pad = 2;
+  const max = Math.max(...values), min = Math.min(...values);
+  const range = (max - min) || 1;
+  const step = (w - pad * 2) / (values.length - 1);
+  const pts = values.map((v, i) => [
+    (pad + i * step).toFixed(1),
+    (h - pad - ((v - min) / range) * (h - pad * 2)).toFixed(1),
+  ]);
+  const [lastX, lastY] = pts[pts.length - 1];
+  return `<svg class="spark" width="${w}" height="${h}" aria-hidden="true">
+    <polyline points="${pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="#7982a9" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${lastX}" cy="${lastY}" r="2.5" fill="${dotColor}"/>
+  </svg>`;
+}
+
 function renderHealth(rows) {
-  document.getElementById('health').innerHTML = rows.map(r => `
+  document.getElementById('health').innerHTML = rows.map(r => {
+    if (r.up) pushLatency(r.name, r.latency_ms);
+    const hist = latencyHistory[r.name] || [];
+    const spark = r.up && hist.length >= 2 ? sparklineSvg(hist, '#9ece6a') : '';
+    return `
     <div class="card">
       <span class="dot ${r.up ? 'up' : 'down'}"></span><b>${esc(r.name)}</b>
       <div class="lbl">${r.up ? (r.latency_ms != null ? r.latency_ms + 'ms' : 'up') : esc(r.error || 'down')}</div>
+      ${spark}
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function renderTable(id, rows, columns, emptyText) {
@@ -62,12 +164,81 @@ function renderTable(id, rows, columns, emptyText) {
   el.innerHTML = header + body;
 }
 
+// Sequential single-hue bar chart — magnitude only, no legend (one series).
+// bars: [{ label, value, errorCount? }]. Value label sits outside the track
+// (never on the fill — a light label on the blue fill fails contrast).
+const tooltip = document.getElementById('chart-tooltip');
+
+function renderBarChart(id, bars, emptyText, variant) {
+  const el = document.getElementById(id);
+  if (!bars.length) { el.innerHTML = `<div class="empty">${emptyText}</div>`; return; }
+  const max = Math.max(...bars.map(b => b.value), 1);
+
+  el.innerHTML = '';
+  bars.forEach(b => {
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.tabIndex = 0;
+
+    const label = document.createElement('div');
+    label.className = 'bar-label';
+    const labelText = document.createElement('span');
+    labelText.textContent = b.label;
+    label.appendChild(labelText);
+    if (b.errorCount) {
+      const badge = document.createElement('span');
+      badge.className = 'err-badge';
+      badge.innerHTML = '<span class="err-dot"></span>';
+      const badgeText = document.createElement('span');
+      badgeText.textContent = `${b.errorCount} err`;
+      badge.appendChild(badgeText);
+      label.appendChild(badge);
+    }
+
+    const track = document.createElement('div');
+    track.className = 'bar-track';
+    const fill = document.createElement('div');
+    fill.className = variant ? `bar-fill ${variant}` : 'bar-fill';
+    fill.style.width = Math.max((b.value / max) * 100, 2) + '%';
+    track.appendChild(fill);
+
+    const value = document.createElement('div');
+    value.className = 'bar-value';
+    value.textContent = b.value;
+
+    row.appendChild(label);
+    row.appendChild(track);
+    row.appendChild(value);
+    el.appendChild(row);
+
+    const showTooltip = (x, y) => {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (x + 12) + 'px';
+      tooltip.style.top = (y + 12) + 'px';
+      tooltip.querySelector('.tt-value').textContent = b.value;
+      tooltip.querySelector('.tt-label').textContent = b.label;
+    };
+    const hideTooltip = () => { tooltip.style.display = 'none'; row.classList.remove('hover'); };
+    row.addEventListener('pointerenter', () => row.classList.add('hover'));
+    row.addEventListener('pointermove', e => showTooltip(e.clientX, e.clientY));
+    row.addEventListener('pointerleave', hideTooltip);
+    row.addEventListener('focus', () => {
+      row.classList.add('hover');
+      const r = row.getBoundingClientRect();
+      showTooltip(r.right, r.top);
+    });
+    row.addEventListener('blur', hideTooltip);
+  });
+}
+
 async function refresh() {
   const resp = await fetch('/api/dashboard/summary');
   if (!resp.ok) return;
   const data = await resp.json();
 
+  renderKpi(data);
   renderHealth(data.health);
+  renderBarChart('storage-chart', data.storage.map(r => ({ label: r.collection, value: r.points ?? 0 })), 'no collections');
   renderTable('storage', data.storage, [
     { key: 'collection', label: 'collection' }, { key: 'points', label: 'points' },
   ], 'no collections');
@@ -75,6 +246,9 @@ async function refresh() {
     { key: 'repo_id', label: 'repo' }, { key: 'node_count', label: 'nodes' },
     { key: 'edge_count', label: 'edges' }, { key: 'last_indexed_at', label: 'last ingest' },
   ], 'no projects ingested yet');
+  renderBarChart('tool-usage-chart', data.tool_usage.map(r => ({
+    label: r.tool_name, value: r.calls, errorCount: r.errors || 0,
+  })), 'no calls in the last 24h', 'amber');
   renderTable('tool-usage', data.tool_usage, [
     { key: 'tool_name', label: 'tool' }, { key: 'calls', label: 'calls' },
     { key: 'errors', label: 'errors' }, { key: 'p50_ms', label: 'p50 ms' },
