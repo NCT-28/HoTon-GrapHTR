@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from qdrant_client.models import PointStruct
 
 from app.main import create_app
-from app.qdrant_store import USER_MEMORIES
+from app.clients.qdrant_store import USER_MEMORIES
 
 
 class FakeEmbedder:

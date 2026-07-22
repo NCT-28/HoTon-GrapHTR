@@ -5,8 +5,8 @@ caught and logged rather than raised — there's nothing upstream to catch it.""
 
 import logging
 
-from app.entity_extraction import extract_and_store_entities
-from app.entity_linker import link_entities_to_code
+from app.graph.entity_extraction import extract_and_store_entities
+from app.graph.entity_linker import link_entities_to_code
 
 logger = logging.getLogger(__name__)
 

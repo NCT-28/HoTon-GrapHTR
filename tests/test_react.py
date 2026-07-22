@@ -3,8 +3,8 @@ import uuid
 import pytest
 from qdrant_client.models import PointStruct
 
-from app.qdrant_store import RAG_CHUNKS
-from app.react import MAX_STEPS, decide_continue, run_multi_step_retrieval
+from app.clients.qdrant_store import RAG_CHUNKS
+from app.agentic.react import MAX_STEPS, decide_continue, run_multi_step_retrieval
 
 
 class FixedEmbedder:

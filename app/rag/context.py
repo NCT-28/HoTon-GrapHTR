@@ -1,7 +1,7 @@
 """Context assembly — ported from hoton-lmr/src/rag/context.rs and src/prompts/context.rs."""
 
-from app.memory import RetrievedMemory
-from app.retrieval import RetrievedChunk
+from app.rag.memory import RetrievedMemory
+from app.rag.retrieval import RetrievedChunk
 
 
 def _self_consistency_adjustment(memory: RetrievedMemory, query: str) -> float:
@@ -64,7 +64,7 @@ def build_full_rag_context(chunks: list[RetrievedChunk], memories: list[Retrieve
 
 # --- profile context + full assembly ---
 
-from app.profile import UserProfile
+from app.rag.profile import UserProfile
 
 
 def build_profile_context_section(profile: UserProfile) -> str:

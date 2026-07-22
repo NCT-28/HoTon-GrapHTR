@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
-from app.qdrant_store import RAG_CHUNKS
+from app.clients.qdrant_store import RAG_CHUNKS
 
 
 @dataclass

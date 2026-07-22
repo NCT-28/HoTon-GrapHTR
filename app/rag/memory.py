@@ -119,7 +119,7 @@ import uuid as _uuid
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
-from app.qdrant_store import USER_MEMORIES
+from app.clients.qdrant_store import USER_MEMORIES
 
 _EXTRACTION_TEMPLATE = """Extract 0-3 concise facts or preferences from this conversation turn.
 Only extract information that would be useful to remember long-term.

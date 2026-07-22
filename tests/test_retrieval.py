@@ -3,8 +3,8 @@ import uuid
 
 from qdrant_client.models import PointStruct
 
-from app.qdrant_store import RAG_CHUNKS
-from app.retrieval import retrieve_chunks
+from app.clients.qdrant_store import RAG_CHUNKS
+from app.rag.retrieval import retrieve_chunks
 
 
 class FixedEmbedder:

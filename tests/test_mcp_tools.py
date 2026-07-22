@@ -16,7 +16,7 @@ from app.mcp_server import (
     retrieve_chunks_impl,
     update_profile_from_message_impl,
 )
-from app.qdrant_store import RAG_CHUNKS
+from app.clients.qdrant_store import RAG_CHUNKS
 
 
 class FakeEmbedder:

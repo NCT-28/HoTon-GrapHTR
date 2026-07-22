@@ -1,4 +1,4 @@
-from app.chunker import chunk_text
+from app.rag.chunker import chunk_text
 
 
 def test_empty_text():

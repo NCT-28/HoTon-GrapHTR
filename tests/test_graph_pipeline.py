@@ -1,6 +1,6 @@
 import pytest
 
-from app.graph_pipeline import run_entity_extraction_and_linking
+from app.graph.graph_pipeline import run_entity_extraction_and_linking
 
 
 class _FakeLLM:

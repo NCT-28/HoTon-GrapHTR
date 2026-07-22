@@ -2,7 +2,7 @@
 
 import httpx
 
-from app.retrieval import RetrievedChunk
+from app.rag.retrieval import RetrievedChunk
 
 CRAG_RELEVANCE_THRESHOLD = 0.5
 

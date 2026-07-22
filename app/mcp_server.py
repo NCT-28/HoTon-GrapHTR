@@ -7,18 +7,18 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
-from app.context import apply_self_consistency, build_full_context
-from app.grading import crag_correct
-from app.hyde import generate_hypothetical_answer
-from app.memory import extract_and_store_memories, retrieve_memories
-from app.profile import get_or_create_profile, update_profile_from_message
-from app.react import run_multi_step_retrieval
-from app.retrieval import retrieve_chunks
-from app.routing import QueryComplexity, classify_query
-from app.code_graph_store import GraphStore
-from app.graph_query import bfs_query, explain_node, shortest_path
-from app.repo_source import resolve_repo_source
-from app.repo_watcher import RepoWatcherManager
+from app.rag.context import apply_self_consistency, build_full_context
+from app.agentic.grading import crag_correct
+from app.agentic.hyde import generate_hypothetical_answer
+from app.rag.memory import extract_and_store_memories, retrieve_memories
+from app.rag.profile import get_or_create_profile, update_profile_from_message
+from app.agentic.react import run_multi_step_retrieval
+from app.rag.retrieval import retrieve_chunks
+from app.agentic.routing import QueryComplexity, classify_query
+from app.graph.code_graph_store import GraphStore
+from app.graph.graph_query import bfs_query, explain_node, shortest_path
+from app.graph.repo_source import resolve_repo_source
+from app.graph.repo_watcher import RepoWatcherManager
 
 
 @dataclass

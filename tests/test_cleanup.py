@@ -3,8 +3,8 @@ import uuid
 
 from qdrant_client.models import PointStruct
 
-from app.cleanup import run_memory_cleanup
-from app.qdrant_store import USER_MEMORIES
+from app.rag.cleanup import run_memory_cleanup
+from app.clients.qdrant_store import USER_MEMORIES
 
 
 def _insert(qdrant, status, confidence, last_used_at, content="x"):

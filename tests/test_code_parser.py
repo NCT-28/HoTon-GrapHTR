@@ -1,4 +1,4 @@
-from app.code_parser import parse_repo
+from app.graph.code_parser import parse_repo
 
 
 def test_parse_repo_extracts_python_symbols_defines_calls_imports_inherits(tmp_path):

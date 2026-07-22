@@ -4,8 +4,8 @@ Mirrors hoton-lmr's tool_loop.rs MAX_TOOL_CALLS pattern."""
 import json
 import uuid
 
-from app.memory import RetrievedMemory, retrieve_memories
-from app.retrieval import RetrievedChunk, retrieve_chunks
+from app.rag.memory import RetrievedMemory, retrieve_memories
+from app.rag.retrieval import RetrievedChunk, retrieve_chunks
 
 MAX_STEPS = 5
 

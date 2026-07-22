@@ -1,7 +1,7 @@
 import pytest
 
-from app.grading import CRAG_RELEVANCE_THRESHOLD, crag_correct, grade_relevance
-from app.retrieval import RetrievedChunk
+from app.agentic.grading import CRAG_RELEVANCE_THRESHOLD, crag_correct, grade_relevance
+from app.rag.retrieval import RetrievedChunk
 
 
 class FakeLLM:

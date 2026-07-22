@@ -1,4 +1,4 @@
-from app.embeddings import Embedder
+from app.clients.embeddings import Embedder
 
 
 class FakeModel:

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
-from app.qdrant_store import PROFILE_SNAPSHOTS, USER_PROFILES
+from app.clients.qdrant_store import PROFILE_SNAPSHOTS, USER_PROFILES
 
 _ADVANCED_TERMS = [
     "algorithm", "complexity", "async", "concurrency", "mutex", "semaphore",

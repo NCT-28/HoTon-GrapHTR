@@ -4,7 +4,7 @@ def test_bootstrap_creates_three_collections(qdrant):
 
 
 def test_bootstrap_is_idempotent(qdrant):
-    from app.qdrant_store import bootstrap_collections
+    from app.clients.qdrant_store import bootstrap_collections
 
     # Calling again must not raise (e.g. "collection already exists")
     bootstrap_collections(qdrant, embed_dim=384)
@@ -19,7 +19,7 @@ def test_bootstrap_creates_profile_collections(qdrant):
 
 
 def test_bootstrap_collections_creates_code_symbol_embeddings(qdrant):
-    from app.qdrant_store import CODE_SYMBOL_EMBEDDINGS
+    from app.clients.qdrant_store import CODE_SYMBOL_EMBEDDINGS
 
     existing = {c.name for c in qdrant.get_collections().collections}
     assert CODE_SYMBOL_EMBEDDINGS in existing

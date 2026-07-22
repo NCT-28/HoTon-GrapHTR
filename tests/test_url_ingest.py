@@ -2,7 +2,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app.browser_client import BrowserClient
+from app.clients.browser_client import BrowserClient
 from app.main import create_app
 
 

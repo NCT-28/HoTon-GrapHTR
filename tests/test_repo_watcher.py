@@ -1,7 +1,7 @@
 import time
 
-from app.qdrant_store import CODE_SYMBOL_EMBEDDINGS
-from app.repo_watcher import RepoWatcherManager
+from app.clients.qdrant_store import CODE_SYMBOL_EMBEDDINGS
+from app.graph.repo_watcher import RepoWatcherManager
 
 
 class _FakeEmbedder:

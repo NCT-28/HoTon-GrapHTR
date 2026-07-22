@@ -7,7 +7,7 @@ import logging
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointIdsList, Range
 
-from app.qdrant_store import USER_MEMORIES
+from app.clients.qdrant_store import USER_MEMORIES
 
 logger = logging.getLogger(__name__)
 

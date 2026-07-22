@@ -1,6 +1,6 @@
 import uuid
 
-from app.profile import (
+from app.rag.profile import (
     ProfileSignal,
     UserProfile,
     current_quarter_period,
@@ -10,7 +10,7 @@ from app.profile import (
     update_profile_from_signals,
     upsert_profile,
 )
-from app.qdrant_store import PROFILE_SNAPSHOTS
+from app.clients.qdrant_store import PROFILE_SNAPSHOTS
 
 
 def test_get_or_create_profile_creates_default(qdrant):

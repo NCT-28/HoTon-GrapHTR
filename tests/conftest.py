@@ -3,8 +3,8 @@ from dataclasses import dataclass, field
 import pytest
 from qdrant_client import QdrantClient
 
-from app.code_graph_store import GraphStore
-from app.qdrant_store import bootstrap_collections
+from app.graph.code_graph_store import GraphStore
+from app.clients.qdrant_store import bootstrap_collections
 
 
 @pytest.fixture

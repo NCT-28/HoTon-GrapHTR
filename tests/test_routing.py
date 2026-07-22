@@ -1,4 +1,4 @@
-from app.routing import QueryComplexity, classify_query
+from app.agentic.routing import QueryComplexity, classify_query
 
 
 class FakeLLM:

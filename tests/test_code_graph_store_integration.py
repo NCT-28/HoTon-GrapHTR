@@ -3,7 +3,7 @@ import os
 import pytest
 from neo4j import GraphDatabase
 
-from app.code_graph_store import Neo4jGraphStore
+from app.graph.code_graph_store import Neo4jGraphStore
 
 NEO4J_TEST_URL = os.environ.get("NEO4J_TEST_URL")
 

@@ -4,19 +4,19 @@ import contextlib
 import httpx
 from fastapi import FastAPI, Header
 
-from app.browser_client import BrowserClient
-from app.cleanup import start_memory_cleanup_job
-from app.code_graph_store import get_graph_store
+from app.clients.browser_client import BrowserClient
+from app.rag.cleanup import start_memory_cleanup_job
+from app.graph.code_graph_store import get_graph_store
 from app.config import get_settings
-from app.documents import add_url_route, build_documents_router
-from app.embeddings import get_embedder
-from app.grading import searxng_web_search
-from app.llm import get_reasoning_llm
+from app.rag.documents import add_url_route, build_documents_router
+from app.clients.embeddings import get_embedder
+from app.agentic.grading import searxng_web_search
+from app.clients.llm import get_reasoning_llm
 from app.mcp_server import build_mcp_server, build_tool_context
-from app.memory import build_memory_router
-from app.profile import build_profile_router
-from app.qdrant_store import RAG_DOCUMENTS, USER_MEMORIES, get_qdrant_client
-from app.repo_watcher import RepoWatcherManager
+from app.rag.memory import build_memory_router
+from app.rag.profile import build_profile_router
+from app.clients.qdrant_store import RAG_DOCUMENTS, USER_MEMORIES, get_qdrant_client
+from app.graph.repo_watcher import RepoWatcherManager
 
 
 async def _default_web_search(query: str) -> list[str]:

@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from app.llm import ReasoningLLM, get_reasoning_llm
+from app.clients.llm import ReasoningLLM, get_reasoning_llm
 
 
 class FakeGenerator:
@@ -37,15 +37,15 @@ def test_generate_zero_temperature_disables_sampling():
 
 def test_get_reasoning_llm_uses_gpu_device_when_cuda_available():
     get_reasoning_llm.cache_clear()
-    with patch("app.llm.torch.cuda.is_available", return_value=True), \
-         patch("app.llm.pipeline") as mock_pipeline:
+    with patch("app.clients.llm.torch.cuda.is_available", return_value=True), \
+         patch("app.clients.llm.pipeline") as mock_pipeline:
         get_reasoning_llm()
         assert mock_pipeline.call_args.kwargs["device"] == 0
 
 
 def test_get_reasoning_llm_uses_cpu_device_when_cuda_unavailable():
     get_reasoning_llm.cache_clear()
-    with patch("app.llm.torch.cuda.is_available", return_value=False), \
-         patch("app.llm.pipeline") as mock_pipeline:
+    with patch("app.clients.llm.torch.cuda.is_available", return_value=False), \
+         patch("app.clients.llm.pipeline") as mock_pipeline:
         get_reasoning_llm()
         assert mock_pipeline.call_args.kwargs["device"] == -1

@@ -1,8 +1,8 @@
 import pytest
 
-from app.context import apply_self_consistency, build_full_rag_context
-from app.memory import RetrievedMemory
-from app.retrieval import RetrievedChunk
+from app.rag.context import apply_self_consistency, build_full_rag_context
+from app.rag.memory import RetrievedMemory
+from app.rag.retrieval import RetrievedChunk
 
 
 def test_apply_self_consistency_penalizes_short_preference_on_long_query():
@@ -43,15 +43,15 @@ def test_build_full_rag_context_combines_memory_and_chunks():
 
 
 def test_profile_section_empty_for_default_profile():
-    from app.context import build_profile_context_section
-    from app.profile import UserProfile
+    from app.rag.context import build_profile_context_section
+    from app.rag.profile import UserProfile
 
     assert build_profile_context_section(UserProfile()) == ""
 
 
 def test_profile_section_renders_non_default_fields():
-    from app.context import build_profile_context_section
-    from app.profile import UserProfile
+    from app.rag.context import build_profile_context_section
+    from app.rag.profile import UserProfile
 
     profile = UserProfile(level="advanced", style="terse", preferred_lang="vi", project_context="a RAG service")
     section = build_profile_context_section(profile)
@@ -63,8 +63,8 @@ def test_profile_section_renders_non_default_fields():
 
 
 def test_build_full_context_orders_profile_memory_rag():
-    from app.context import build_full_context
-    from app.profile import UserProfile
+    from app.rag.context import build_full_context
+    from app.rag.profile import UserProfile
 
     profile = UserProfile(level="advanced")
     memories = [RetrievedMemory(id="m1", content="User likes Rust", memory_type="fact", confidence=0.7)]
@@ -76,7 +76,7 @@ def test_build_full_context_orders_profile_memory_rag():
 
 
 def test_build_full_context_all_empty_returns_empty_string():
-    from app.context import build_full_context
-    from app.profile import UserProfile
+    from app.rag.context import build_full_context
+    from app.rag.profile import UserProfile
 
     assert build_full_context([], [], UserProfile()) == ""

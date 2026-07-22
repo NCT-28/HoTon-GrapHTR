@@ -1,4 +1,4 @@
-from app.hyde import generate_hypothetical_answer
+from app.agentic.hyde import generate_hypothetical_answer
 
 
 class FakeLLM:

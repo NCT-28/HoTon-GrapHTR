@@ -1,4 +1,4 @@
-from app.entity_linker import link_entities_to_code
+from app.graph.entity_linker import link_entities_to_code
 
 
 class _FakeEmbedder:

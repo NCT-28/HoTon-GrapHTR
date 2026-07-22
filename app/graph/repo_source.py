@@ -10,7 +10,7 @@ import os
 import subprocess
 
 from app.config import get_settings
-from app.documents import is_safe_url
+from app.rag.documents import is_safe_url
 
 
 def resolve_repo_source(source: str, repo_id: str) -> str:

@@ -3,8 +3,8 @@ import uuid
 
 from qdrant_client.models import PointStruct
 
-from app.memory import retrieve_memories
-from app.qdrant_store import USER_MEMORIES
+from app.rag.memory import retrieve_memories
+from app.clients.qdrant_store import USER_MEMORIES
 
 
 class FixedEmbedder:

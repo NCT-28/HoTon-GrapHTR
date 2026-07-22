@@ -1,4 +1,4 @@
-from app.entity_extraction import extract_and_store_entities, parse_entities_from_text
+from app.graph.entity_extraction import extract_and_store_entities, parse_entities_from_text
 
 
 class _FakeLLM:

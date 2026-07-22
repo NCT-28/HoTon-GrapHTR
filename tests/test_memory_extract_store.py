@@ -2,8 +2,8 @@ import uuid
 
 from qdrant_client.models import PointStruct
 
-from app.memory import extract_and_store_memories
-from app.qdrant_store import USER_MEMORIES
+from app.rag.memory import extract_and_store_memories
+from app.clients.qdrant_store import USER_MEMORIES
 
 
 class FakeEmbedder:

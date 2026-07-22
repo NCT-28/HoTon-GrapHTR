@@ -1,4 +1,4 @@
-from app.memory import (
+from app.rag.memory import (
     OPINION_CONFIDENCE_MAX,
     USER_ASSERTION_CONFIDENCE_MAX,
     ClaimClass,

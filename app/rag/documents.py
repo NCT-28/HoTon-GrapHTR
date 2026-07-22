@@ -8,8 +8,8 @@ from markdown_it import MarkdownIt
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
 
-from app.chunker import DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP, chunk_text
-from app.qdrant_store import RAG_CHUNKS
+from app.rag.chunker import DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP, chunk_text
+from app.clients.qdrant_store import RAG_CHUNKS
 
 _BLOCKED_HOSTS = {
     "169.254.169.254",
@@ -139,8 +139,8 @@ import uuid as _uuid
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile, status
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointIdsList
 
-from app.graph_pipeline import run_entity_extraction_and_linking
-from app.qdrant_store import RAG_DOCUMENTS
+from app.graph.graph_pipeline import run_entity_extraction_and_linking
+from app.clients.qdrant_store import RAG_DOCUMENTS
 
 
 def build_documents_router(get_client, get_embedder, get_graph_store=None, get_llm=None) -> APIRouter:

@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from app.mcp_server import ToolContext, ingest_codebase_impl, query_code_graph_impl
-from app.repo_watcher import RepoWatcherManager
+from app.graph.repo_watcher import RepoWatcherManager
 
 
 def _ctx(graph_store):

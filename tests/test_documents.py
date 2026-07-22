@@ -1,12 +1,12 @@
 import uuid
 
-from app.documents import (
+from app.rag.documents import (
     extract_text_from_markdown,
     ingest_document,
     is_safe_url,
     process_uploaded_file,
 )
-from app.qdrant_store import RAG_CHUNKS
+from app.clients.qdrant_store import RAG_CHUNKS
 
 
 class FakeEmbedder:

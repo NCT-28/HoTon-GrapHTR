@@ -13,9 +13,9 @@ from qdrant_client.models import PointStruct
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from app.code_graph_store import GraphStore
-from app.code_parser import parse_repo
-from app.qdrant_store import CODE_SYMBOL_EMBEDDINGS
+from app.graph.code_graph_store import GraphStore
+from app.graph.code_parser import parse_repo
+from app.clients.qdrant_store import CODE_SYMBOL_EMBEDDINGS
 
 _DEFAULT_DEBOUNCE_SECONDS = 2.0
 

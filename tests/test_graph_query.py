@@ -1,4 +1,4 @@
-from app.graph_query import bfs_query, explain_node, shortest_path
+from app.graph.graph_query import bfs_query, explain_node, shortest_path
 
 NODES = [
     {"id": "1", "name": "Animal", "kind": "class"},
