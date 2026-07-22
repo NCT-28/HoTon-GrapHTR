@@ -19,6 +19,8 @@ from app.graph.code_graph_store import GraphStore
 from app.graph.graph_query import bfs_query, explain_node, shortest_path
 from app.graph.repo_source import resolve_repo_source
 from app.graph.repo_watcher import RepoWatcherManager
+from app.dashboard.tracker import track_usage
+from app.dashboard.usage_store import UsageStore
 
 
 @dataclass
@@ -29,15 +31,17 @@ class ToolContext:
     web_search_fn: object  # Callable[[str], Awaitable[list[str]]]
     graph_store: GraphStore | None = None
     watcher_manager: RepoWatcherManager | None = None
+    usage_store: UsageStore | None = None
 
 
 def build_tool_context(
     client: QdrantClient, embedder, llm, web_search_fn,
     graph_store: GraphStore | None = None, watcher_manager: RepoWatcherManager | None = None,
+    usage_store: UsageStore | None = None,
 ) -> ToolContext:
     return ToolContext(
         client=client, embedder=embedder, llm=llm, web_search_fn=web_search_fn,
-        graph_store=graph_store, watcher_manager=watcher_manager,
+        graph_store=graph_store, watcher_manager=watcher_manager, usage_store=usage_store,
     )
 
 
@@ -112,6 +116,16 @@ class GraphEdgeOut(BaseModel):
 
 
 class QueryCodeGraphResult(BaseModel):
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+
+
+class GraphSnapshotResult(BaseModel):
+    repo_id: str
+    node_count: int
+    edge_count: int
+    node_kinds: dict[str, int]
+    edge_types: dict[str, int]
     nodes: list[GraphNodeOut]
     edges: list[GraphEdgeOut]
 
@@ -219,38 +233,67 @@ def query_code_graph_impl(
     )
 
 
+def export_graph_snapshot_impl(ctx: ToolContext, user_id: str, repo_id: str) -> GraphSnapshotResult:
+    nodes, edges = ctx.graph_store.get_subgraph(user_id, repo_id)
+
+    node_kinds: dict[str, int] = {}
+    for n in nodes:
+        kind = n.get("kind") or "unknown"
+        node_kinds[kind] = node_kinds.get(kind, 0) + 1
+
+    edge_types: dict[str, int] = {}
+    for e in edges:
+        edge_types[e["type"]] = edge_types.get(e["type"], 0) + 1
+
+    return GraphSnapshotResult(
+        repo_id=repo_id,
+        node_count=len(nodes),
+        edge_count=len(edges),
+        node_kinds=node_kinds,
+        edge_types=edge_types,
+        nodes=[_to_node_out(n) for n in nodes],
+        edges=[GraphEdgeOut(source=e["source"], target=e["target"], type=e["type"]) for e in edges],
+    )
+
+
 def build_mcp_server(ctx: ToolContext) -> FastMCP:
     mcp = FastMCP("hoton-rag", stateless_http=True, json_response=True)
 
     @mcp.tool()
     async def get_rag_context(user_id: str, query: str) -> RagContextResult:
         """Retrieve merged profile/memory/knowledge context for a chat turn."""
-        return await get_rag_context_impl(ctx, user_id, query)
+        with track_usage(ctx.usage_store, "get_rag_context", user_id):
+            return await get_rag_context_impl(ctx, user_id, query)
 
     @mcp.tool()
     def retrieve_chunks(user_id: str, query: str, top_k: int = 5, min_similarity: float = 0.0) -> RetrieveChunksResult:
         """Raw chunk search, for workflow rag_query nodes."""
-        return retrieve_chunks_impl(ctx, user_id, query, top_k, min_similarity)
+        with track_usage(ctx.usage_store, "retrieve_chunks", user_id):
+            return retrieve_chunks_impl(ctx, user_id, query, top_k, min_similarity)
 
     @mcp.tool()
     def extract_and_store_memories(user_id: str, user_message: str, assistant_message: str) -> ExtractMemoriesResult:
         """Post-turn hook: extract and store facts/preferences from a conversation turn."""
-        return extract_and_store_memories_impl(ctx, user_id, user_message, assistant_message)
+        with track_usage(ctx.usage_store, "extract_and_store_memories", user_id):
+            return extract_and_store_memories_impl(ctx, user_id, user_message, assistant_message)
 
     @mcp.tool()
     def update_profile_from_message(user_id: str, user_message: str) -> UpdateProfileResult:
         """Post-turn hook: update the user's profile signals from their message."""
-        return update_profile_from_message_impl(ctx, user_id, user_message)
+        with track_usage(ctx.usage_store, "update_profile_from_message", user_id):
+            return update_profile_from_message_impl(ctx, user_id, user_message)
 
     @mcp.tool()
     def embed_text(text: str) -> EmbedTextResult:
         """Raw embedding, for workflow embedding nodes."""
-        return embed_text_impl(ctx, text)
+        with track_usage(ctx.usage_store, "embed_text", ""):
+            return embed_text_impl(ctx, text)
 
     @mcp.tool()
     def ingest_codebase(user_id: str, source: str) -> IngestCodebaseResult:
         """Parse a local path or git URL into the code knowledge graph and start watching it for changes."""
-        return ingest_codebase_impl(ctx, user_id, source)
+        with track_usage(ctx.usage_store, "ingest_codebase", user_id):
+            return ingest_codebase_impl(ctx, user_id, source)
 
     @mcp.tool()
     def query_code_graph(
@@ -259,6 +302,14 @@ def build_mcp_server(ctx: ToolContext) -> FastMCP:
     ) -> QueryCodeGraphResult:
         """Query the code graph for a repo. mode='query' (keyword BFS from `keyword`),
         'path' (shortest path from `from_name` to `to_name`), 'explain' (node + neighbors by `name`)."""
-        return query_code_graph_impl(ctx, user_id, repo_id, mode, keyword, from_name, to_name, name, depth)
+        with track_usage(ctx.usage_store, "query_code_graph", user_id, repo_id=repo_id):
+            return query_code_graph_impl(ctx, user_id, repo_id, mode, keyword, from_name, to_name, name, depth)
+
+    @mcp.tool()
+    def export_graph_snapshot(user_id: str, repo_id: str) -> GraphSnapshotResult:
+        """Full unfiltered node/edge dump for a repo (code graph + linked TextEntity/MENTIONS),
+        for exporting a local graphtr-out/ snapshot that can be queried offline without MCP calls."""
+        with track_usage(ctx.usage_store, "export_graph_snapshot", user_id, repo_id=repo_id):
+            return export_graph_snapshot_impl(ctx, user_id, repo_id)
 
     return mcp
