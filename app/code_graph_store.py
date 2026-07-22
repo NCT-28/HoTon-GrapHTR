@@ -126,11 +126,15 @@ class Neo4jGraphStore(GraphStore):
         return [dict(record["r"]) for record in records]
 
     def get_subgraph(self, user_id: str, repo_id: str) -> tuple[list[dict], list[dict]]:
+        """CodeSymbol nodes/edges for this repo, plus any TextEntity that
+        MENTIONS one of those symbols — the unified-graph query surface, not
+        just the code-only slice."""
         records, _, _ = self._driver.execute_query(
             """
             MATCH (n:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
             OPTIONAL MATCH (n)-[r]->(m:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
-            RETURN n, r, m
+            OPTIONAL MATCH (te:TextEntity {user_id: $user_id})-[:MENTIONS]->(n)
+            RETURN n, r, m, te
             """,
             user_id=user_id, repo_id=repo_id,
         )
@@ -143,6 +147,10 @@ class Neo4jGraphStore(GraphStore):
                 m = dict(record["m"])
                 nodes_by_id[m["id"]] = m
                 edges.append({"source": n["id"], "target": m["id"], "type": record["r"].type})
+            if record["te"] is not None:
+                te = dict(record["te"])
+                nodes_by_id[te["id"]] = te
+                edges.append({"source": te["id"], "target": n["id"], "type": "MENTIONS"})
         return list(nodes_by_id.values()), edges
 
     def upsert_text_entities(self, entities: list[dict]) -> None:

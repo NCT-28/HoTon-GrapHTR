@@ -29,6 +29,23 @@ def test_delete_repo_removes_its_symbols_and_edges(graph_store):
     assert edges == []
 
 
+def test_get_subgraph_includes_text_entities_that_mention_a_symbol(graph_store):
+    graph_store.upsert_symbols([
+        {"id": "s1", "user_id": "u1", "repo_id": "r1", "kind": "class", "name": "Retriever",
+         "file_path": "retrieval.py", "start_line": 1, "end_line": 10, "language": "python"},
+    ])
+    graph_store.upsert_text_entities([
+        {"id": "e1", "user_id": "u1", "name": "Retriever", "entity_type": "concept",
+         "source_doc_id": "doc-1", "source_memory_id": None},
+    ])
+    graph_store.upsert_mentions_edges([{"source": "e1", "target": "s1"}])
+
+    nodes, edges = graph_store.get_subgraph("u1", "r1")
+
+    assert {n["id"] for n in nodes} == {"s1", "e1"}
+    assert {"source": "e1", "target": "s1", "type": "MENTIONS"} in edges
+
+
 def test_list_repos_returns_all_repos_across_users(graph_store):
     graph_store.upsert_repo({"user_id": "u1", "repo_id": "r1", "source": "/tmp/r1",
                               "local_path": "/tmp/r1", "last_indexed_at": "2026-07-22T00:00:00"})

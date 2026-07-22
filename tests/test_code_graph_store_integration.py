@@ -32,3 +32,20 @@ def test_upsert_and_get_subgraph_round_trips_through_real_neo4j(neo4j_store):
 
     assert {n["name"] for n in nodes} == {"foo", "bar"}
     assert edges == [{"source": "int-a", "target": "int-b", "type": "CALLS"}]
+
+
+def test_get_subgraph_includes_mentioning_text_entities_through_real_neo4j(neo4j_store):
+    neo4j_store.upsert_symbols([
+        {"id": "int-s1", "user_id": "test-u1", "repo_id": "test-r1", "kind": "class", "name": "Retriever",
+         "file_path": "retrieval.py", "start_line": 1, "end_line": 2, "language": "python"},
+    ])
+    neo4j_store.upsert_text_entities([
+        {"id": "int-e1", "user_id": "test-u1", "name": "Retriever", "entity_type": "concept",
+         "source_doc_id": "doc-1", "source_memory_id": None},
+    ])
+    neo4j_store.upsert_mentions_edges([{"source": "int-e1", "target": "int-s1"}])
+
+    nodes, edges = neo4j_store.get_subgraph("test-u1", "test-r1")
+
+    assert {n["id"] for n in nodes} == {"int-s1", "int-e1"}
+    assert {"source": "int-e1", "target": "int-s1", "type": "MENTIONS"} in edges

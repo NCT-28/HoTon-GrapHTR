@@ -50,10 +50,18 @@ class FakeGraphStore(GraphStore):
         return list(self.repos.values())
 
     def get_subgraph(self, user_id: str, repo_id: str) -> tuple[list[dict], list[dict]]:
-        nodes = [s for s in self.symbols.values() if s["user_id"] == user_id and s["repo_id"] == repo_id]
-        ids = {n["id"] for n in nodes}
+        nodes_by_id = {
+            s["id"]: s for s in self.symbols.values() if s["user_id"] == user_id and s["repo_id"] == repo_id
+        }
+        ids = set(nodes_by_id.keys())
         edges = [e for e in self.code_edges if e["source"] in ids and e["target"] in ids]
-        return nodes, edges
+        for e in self.mentions_edges:
+            if e["target"] in ids:
+                te = self.text_entities.get(e["source"])
+                if te is not None:
+                    nodes_by_id[te["id"]] = te
+                edges.append({"source": e["source"], "target": e["target"], "type": "MENTIONS"})
+        return list(nodes_by_id.values()), edges
 
     def upsert_text_entities(self, entities: list[dict]) -> None:
         for e in entities:
