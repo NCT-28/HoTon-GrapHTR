@@ -49,7 +49,7 @@ function renderHealth(rows) {
   document.getElementById('health').innerHTML = rows.map(r => `
     <div class="card">
       <span class="dot ${r.up ? 'up' : 'down'}"></span><b>${esc(r.name)}</b>
-      <div class="lbl">${r.up ? (r.latency_ms + 'ms') : esc(r.error || 'down')}</div>
+      <div class="lbl">${r.up ? (r.latency_ms != null ? r.latency_ms + 'ms' : 'up') : esc(r.error || 'down')}</div>
     </div>
   `).join('');
 }
