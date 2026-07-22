@@ -324,11 +324,19 @@ def build_memory_router(get_client) -> APIRouter:
 
     @router.get("/api/memories")
     async def get_memories(x_user_id: str = Header(...)):
-        return list_memories(get_client(), _uuid.UUID(x_user_id))
+        try:
+            user_id = _uuid.UUID(x_user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid X-User-Id header")
+        return list_memories(get_client(), user_id)
 
     @router.delete("/api/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
     async def remove_memory(memory_id: str, x_user_id: str = Header(...)):
-        if not delete_memory(get_client(), memory_id, _uuid.UUID(x_user_id)):
+        try:
+            user_id = _uuid.UUID(x_user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid X-User-Id header")
+        if not delete_memory(get_client(), memory_id, user_id):
             raise HTTPException(status_code=404, detail="Memory not found")
         return None
 
