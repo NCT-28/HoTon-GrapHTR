@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>hoton-rag dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1b26; color: #c0caf5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 24px; }
+  h1 { font-size: 18px; margin-bottom: 16px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #7982a9; margin: 20px 0 10px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .card { background: #16161e; border: 1px solid #2a2e42; border-radius: 8px; padding: 14px; }
+  .card .lbl { font-size: 11px; color: #7982a9; margin-top: 2px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .up { background: #9ece6a; } .down { background: #f7768e; }
+  .row { display: flex; gap: 16px; }
+  .col { flex: 1; background: #16161e; border: 1px solid #2a2e42; border-radius: 8px; padding: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: #7982a9; font-weight: 500; padding: 4px 8px; border-bottom: 1px solid #2a2e42; }
+  td { padding: 4px 8px; border-bottom: 1px solid #20222f; }
+  .empty { color: #565f89; font-style: italic; padding: 8px; }
+  footer { font-size: 11px; color: #565f89; margin-top: 16px; }
+</style>
+</head>
+<body>
+<h1>hoton-rag dashboard</h1>
+
+<h2>Health</h2>
+<div class="grid" id="health"></div>
+
+<h2>Storage</h2>
+<div class="row">
+  <div class="col"><b style="font-size:12px">Qdrant collections</b><table id="storage"></table></div>
+  <div class="col"><b style="font-size:12px">Neo4j graph (by project)</b><table id="by-project"></table></div>
+</div>
+
+<h2>Tool / route usage (last 24h)</h2>
+<div class="col"><table id="tool-usage"></table></div>
+
+<h2>By user (last 24h)</h2>
+<div class="col"><table id="by-user"></table></div>
+
+<footer>Auto-refreshes every 7s</footer>
+
+<script>
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function renderHealth(rows) {
+  document.getElementById('health').innerHTML = rows.map(r => `
+    <div class="card">
+      <span class="dot ${r.up ? 'up' : 'down'}"></span><b>${esc(r.name)}</b>
+      <div class="lbl">${r.up ? (r.latency_ms + 'ms') : esc(r.error || 'down')}</div>
+    </div>
+  `).join('');
+}
+
+function renderTable(id, rows, columns, emptyText) {
+  const el = document.getElementById(id);
+  if (!rows.length) { el.innerHTML = `<tr><td class="empty">${emptyText}</td></tr>`; return; }
+  const header = `<tr>${columns.map(c => `<th>${c.label}</th>`).join('')}</tr>`;
+  const body = rows.map(r => `<tr>${columns.map(c => `<td>${esc(r[c.key] ?? '-')}</td>`).join('')}</tr>`).join('');
+  el.innerHTML = header + body;
+}
+
+async function refresh() {
+  const resp = await fetch('/api/dashboard/summary');
+  if (!resp.ok) return;
+  const data = await resp.json();
+
+  renderHealth(data.health);
+  renderTable('storage', data.storage, [
+    { key: 'collection', label: 'collection' }, { key: 'points', label: 'points' },
+  ], 'no collections');
+  renderTable('by-project', data.by_project, [
+    { key: 'repo_id', label: 'repo' }, { key: 'node_count', label: 'nodes' },
+    { key: 'edge_count', label: 'edges' }, { key: 'last_indexed_at', label: 'last ingest' },
+  ], 'no projects ingested yet');
+  renderTable('tool-usage', data.tool_usage, [
+    { key: 'tool_name', label: 'tool' }, { key: 'calls', label: 'calls' },
+    { key: 'errors', label: 'errors' }, { key: 'p50_ms', label: 'p50 ms' },
+  ], 'no calls in the last 24h');
+  renderTable('by-user', data.by_user, [
+    { key: 'user_id', label: 'user_id' }, { key: 'tool_calls', label: 'tool calls' },
+    { key: 'doc_count', label: 'docs' }, { key: 'memory_count', label: 'memories' },
+  ], 'no usage tracked yet');
+}
+
+refresh();
+setInterval(refresh, 7000);
+</script>
+</body>
+</html>
