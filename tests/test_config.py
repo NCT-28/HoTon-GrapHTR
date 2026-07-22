@@ -20,3 +20,23 @@ def test_settings_reads_env(monkeypatch):
     settings = Settings()
     assert settings.qdrant_url == "http://qdrant:6333"
     assert settings.embed_model_name == "custom/model"
+
+
+def test_settings_dashboard_and_usage_db_defaults(monkeypatch):
+    monkeypatch.delenv("USAGE_DB_URL", raising=False)
+    monkeypatch.delenv("DASHBOARD_USER", raising=False)
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    settings = Settings()
+    assert settings.usage_db_url == ""
+    assert settings.dashboard_user == ""
+    assert settings.dashboard_password == ""
+
+
+def test_settings_reads_dashboard_and_usage_db_env(monkeypatch):
+    monkeypatch.setenv("USAGE_DB_URL", "postgresql://lmr:changeme@postgres:5432/hoton_rag")
+    monkeypatch.setenv("DASHBOARD_USER", "admin")
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret")
+    settings = Settings()
+    assert settings.usage_db_url == "postgresql://lmr:changeme@postgres:5432/hoton_rag"
+    assert settings.dashboard_user == "admin"
+    assert settings.dashboard_password == "secret"

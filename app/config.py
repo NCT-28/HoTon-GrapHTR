@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "changeme"
     code_repos_dir: str = "./repos"
+    usage_db_url: str = ""
+    dashboard_user: str = ""
+    dashboard_password: str = ""
 
     class Config:
         env_file = ".env"
