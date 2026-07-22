@@ -7,12 +7,15 @@ debounced so a burst of changes triggers one re-index."""
 import datetime
 import os
 import threading
+import uuid
 
+from qdrant_client.models import PointStruct
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from app.code_graph_store import GraphStore
 from app.code_parser import parse_repo
+from app.qdrant_store import CODE_SYMBOL_EMBEDDINGS
 
 _DEFAULT_DEBOUNCE_SECONDS = 2.0
 
@@ -39,9 +42,14 @@ class _RepoChangeHandler(FileSystemEventHandler):
 
 
 class RepoWatcherManager:
-    def __init__(self, graph_store: GraphStore, debounce_seconds: float = _DEFAULT_DEBOUNCE_SECONDS):
+    def __init__(
+        self, graph_store: GraphStore, debounce_seconds: float = _DEFAULT_DEBOUNCE_SECONDS,
+        qdrant_client=None, embedder=None,
+    ):
         self._graph_store = graph_store
         self._debounce_seconds = debounce_seconds
+        self._qdrant_client = qdrant_client
+        self._embedder = embedder
         self._observer = Observer()
         self._observer.start()
         self._watches: dict[tuple[str, str], object] = {}
@@ -60,6 +68,22 @@ class RepoWatcherManager:
         ])
         self._graph_store.upsert_code_edges(
             [{"source": e.source, "target": e.target, "type": e.type} for e in edges]
+        )
+        if self._qdrant_client is not None and self._embedder is not None and symbols:
+            self._upsert_symbol_embeddings(user_id, symbols)
+
+    def _upsert_symbol_embeddings(self, user_id: str, symbols) -> None:
+        vectors = self._embedder.embed_batch([f"{s.kind} {s.name}" for s in symbols])
+        self._qdrant_client.upsert(
+            collection_name=CODE_SYMBOL_EMBEDDINGS,
+            points=[
+                PointStruct(
+                    id=str(uuid.uuid4()), vector=vector,
+                    payload={"symbol_id": s.id, "user_id": user_id, "name": s.name, "kind": s.kind, "file_path": s.file_path},
+                )
+                for s, vector in zip(symbols, vectors)
+            ],
+            wait=True,
         )
 
     def watch(self, user_id: str, repo_id: str, local_path: str) -> None:

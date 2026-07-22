@@ -37,7 +37,9 @@ def create_app(
     )
     resolved_web_search_fn = web_search_fn if web_search_fn is not None else _default_web_search
     resolved_graph_store = graph_store if graph_store is not None else get_graph_store()
-    resolved_watcher_manager = watcher_manager if watcher_manager is not None else RepoWatcherManager(resolved_graph_store)
+    resolved_watcher_manager = watcher_manager if watcher_manager is not None else RepoWatcherManager(
+        resolved_graph_store, qdrant_client=get_client_fn(), embedder=get_embedder_fn(),
+    )
 
     tool_ctx = build_tool_context(
         get_client_fn(), get_embedder_fn(), get_llm_fn(), resolved_web_search_fn,

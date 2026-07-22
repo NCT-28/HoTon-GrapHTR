@@ -1,6 +1,12 @@
 import time
 
+from app.qdrant_store import CODE_SYMBOL_EMBEDDINGS
 from app.repo_watcher import RepoWatcherManager
+
+
+class _FakeEmbedder:
+    def embed_batch(self, texts):
+        return [[float(len(t))] * 384 for t in texts]
 
 
 def test_reindex_populates_graph_store_from_repo(tmp_path, graph_store):
@@ -52,3 +58,13 @@ def test_resume_all_rewatches_repos_with_paths_that_still_exist(tmp_path, graph_
     assert ("user-1", "repo-1") in manager.watched_repos()
     assert ("user-1", "repo-gone") not in manager.watched_repos()
     manager.stop()
+
+
+def test_reindex_populates_code_symbol_embeddings(tmp_path, graph_store, qdrant):
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+
+    count = qdrant.count(collection_name=CODE_SYMBOL_EMBEDDINGS).count
+    assert count >= 1

@@ -11,6 +11,7 @@ RAG_CHUNKS = "rag_chunks"
 USER_MEMORIES = "user_memories"
 USER_PROFILES = "user_profiles"
 PROFILE_SNAPSHOTS = "profile_snapshots"
+CODE_SYMBOL_EMBEDDINGS = "code_symbol_embeddings"
 
 
 def bootstrap_collections(client: QdrantClient, embed_dim: int) -> None:
@@ -48,6 +49,12 @@ def bootstrap_collections(client: QdrantClient, embed_dim: int) -> None:
         client.create_collection(
             collection_name=PROFILE_SNAPSHOTS,
             vectors_config=VectorParams(size=1, distance=Distance.COSINE),
+        )
+
+    if CODE_SYMBOL_EMBEDDINGS not in existing:
+        client.create_collection(
+            collection_name=CODE_SYMBOL_EMBEDDINGS,
+            vectors_config=VectorParams(size=embed_dim, distance=Distance.COSINE),
         )
 
 
