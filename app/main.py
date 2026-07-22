@@ -17,6 +17,8 @@ from app.rag.memory import build_memory_router
 from app.rag.profile import build_profile_router
 from app.clients.qdrant_store import RAG_DOCUMENTS, USER_MEMORIES, get_qdrant_client
 from app.graph.repo_watcher import RepoWatcherManager
+from app.dashboard.router import build_dashboard_router
+from app.dashboard.usage_store import get_usage_store
 
 
 async def _default_web_search(query: str) -> list[str]:
@@ -27,7 +29,7 @@ async def _default_web_search(query: str) -> list[str]:
 
 def create_app(
     qdrant_client=None, embedder=None, browser_client=None, llm=None, web_search_fn=None,
-    graph_store=None, watcher_manager=None,
+    graph_store=None, watcher_manager=None, usage_store=None,
 ) -> FastAPI:
     get_client_fn = (lambda: qdrant_client) if qdrant_client is not None else get_qdrant_client
     get_embedder_fn = (lambda: embedder) if embedder is not None else get_embedder
@@ -40,10 +42,11 @@ def create_app(
     resolved_watcher_manager = watcher_manager if watcher_manager is not None else RepoWatcherManager(
         resolved_graph_store, qdrant_client=get_client_fn(), embedder=get_embedder_fn(),
     )
+    get_usage_store_fn = (lambda: usage_store) if usage_store is not None else get_usage_store
 
     tool_ctx = build_tool_context(
         get_client_fn(), get_embedder_fn(), get_llm_fn(), resolved_web_search_fn,
-        resolved_graph_store, resolved_watcher_manager,
+        resolved_graph_store, resolved_watcher_manager, get_usage_store_fn(),
     )
     mcp = build_mcp_server(tool_ctx)
     mcp_app = mcp.streamable_http_app()  # must be called once before mcp.session_manager exists
@@ -59,11 +62,17 @@ def create_app(
 
     app = FastAPI(title="hoton-rag", lifespan=lifespan)
 
-    router = build_documents_router(get_client_fn, get_embedder_fn, lambda: resolved_graph_store, get_llm_fn)
-    add_url_route(router, get_client_fn, get_embedder_fn, get_browser_fn, lambda: resolved_graph_store, get_llm_fn)
+    router = build_documents_router(
+        get_client_fn, get_embedder_fn, lambda: resolved_graph_store, get_llm_fn, get_usage_store_fn,
+    )
+    add_url_route(
+        router, get_client_fn, get_embedder_fn, get_browser_fn,
+        lambda: resolved_graph_store, get_llm_fn, get_usage_store_fn,
+    )
     app.include_router(router)
-    app.include_router(build_memory_router(get_client_fn))
-    app.include_router(build_profile_router(get_client_fn))
+    app.include_router(build_memory_router(get_client_fn, get_usage_store_fn))
+    app.include_router(build_profile_router(get_client_fn, get_usage_store_fn))
+    app.include_router(build_dashboard_router(get_client_fn, lambda: resolved_graph_store, get_usage_store_fn, get_embedder_fn))
 
     @app.get("/health")
     async def health():
