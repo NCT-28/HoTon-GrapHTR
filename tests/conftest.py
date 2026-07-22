@@ -63,6 +63,9 @@ class FakeGraphStore(GraphStore):
                 edges.append({"source": e["source"], "target": e["target"], "type": "MENTIONS"})
         return list(nodes_by_id.values()), edges
 
+    def ping(self) -> bool:
+        return True
+
     def upsert_text_entities(self, entities: list[dict]) -> None:
         for e in entities:
             self.text_entities[e["id"]] = e

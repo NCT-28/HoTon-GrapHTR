@@ -1,3 +1,7 @@
+def test_fake_graph_store_ping_returns_true(graph_store):
+    assert graph_store.ping() is True
+
+
 def test_upsert_and_get_subgraph_scoped_by_user_and_repo(graph_store):
     graph_store.upsert_symbols([
         {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",

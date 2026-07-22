@@ -42,6 +42,9 @@ class GraphStore(ABC):
     @abstractmethod
     def get_subgraph(self, user_id: str, repo_id: str) -> tuple[list[dict], list[dict]]: ...
 
+    @abstractmethod
+    def ping(self) -> bool: ...
+
     # --- Phase 2: text entities + cross-link ---
 
     @abstractmethod
@@ -152,6 +155,10 @@ class Neo4jGraphStore(GraphStore):
                 nodes_by_id[te["id"]] = te
                 edges.append({"source": te["id"], "target": n["id"], "type": "MENTIONS"})
         return list(nodes_by_id.values()), edges
+
+    def ping(self) -> bool:
+        self._driver.execute_query("RETURN 1")
+        return True
 
     def upsert_text_entities(self, entities: list[dict]) -> None:
         if not entities:
