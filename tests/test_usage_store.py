@@ -1,5 +1,17 @@
 from datetime import datetime, timedelta, timezone
 
+from app.dashboard.usage_store import build_usage_db_url
+
+
+def test_build_usage_db_url_url_encodes_special_characters_in_password():
+    url = build_usage_db_url(host="postgres", port=5432, user="lmr", password="we!rd@pass", name="hoton_rag")
+    assert url == "postgresql://lmr:we%21rd%40pass@postgres:5432/hoton_rag"
+
+
+def test_build_usage_db_url_url_encodes_special_characters_in_user():
+    url = build_usage_db_url(host="postgres", port=5432, user="us@er", password="pw", name="hoton_rag")
+    assert url == "postgresql://us%40er:pw@postgres:5432/hoton_rag"
+
 
 def test_fake_usage_store_counts_by_tool(usage_store):
     now = datetime.now(timezone.utc)

@@ -29,6 +29,16 @@ class UsageStore(ABC):
     def ping(self) -> bool: ...
 
 
+def build_usage_db_url(host: str, port: int, user: str, password: str, name: str) -> str:
+    """Assemble a Postgres URI with user/password percent-encoded — Docker
+    Compose's ${VAR} substitution can't URL-encode, so a raw password
+    containing '@', ':', '/' etc. (a real risk — this repo's own POSTGRES_PASS
+    does) breaks any URI built by direct YAML interpolation. Assembling and
+    encoding here, in Python, avoids that."""
+    from urllib.parse import quote
+    return f"postgresql://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}/{name}"
+
+
 def _admin_dsn(usage_db_url: str) -> str:
     """Same server, 'postgres' maintenance database — used only to CREATE DATABASE."""
     parsed = urlparse(usage_db_url)
@@ -138,8 +148,15 @@ class PostgresUsageStore(UsageStore):
 @lru_cache
 def get_usage_store() -> "UsageStore | None":
     settings = get_settings()
-    if not settings.usage_db_url:
+    if settings.usage_db_host:
+        url = build_usage_db_url(
+            settings.usage_db_host, settings.usage_db_port,
+            settings.usage_db_user, settings.usage_db_password, settings.usage_db_name,
+        )
+    elif settings.usage_db_url:
+        url = settings.usage_db_url
+    else:
         return None
-    bootstrap_usage_database(settings.usage_db_url)
-    conn = psycopg.connect(settings.usage_db_url, autocommit=False)
+    bootstrap_usage_database(url)
+    conn = psycopg.connect(url, autocommit=False)
     return PostgresUsageStore(conn)

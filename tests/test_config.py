@@ -40,3 +40,28 @@ def test_settings_reads_dashboard_and_usage_db_env(monkeypatch):
     assert settings.usage_db_url == "postgresql://lmr:changeme@postgres:5432/hoton_rag"
     assert settings.dashboard_user == "admin"
     assert settings.dashboard_password == "secret"
+
+
+def test_settings_usage_db_component_defaults(monkeypatch):
+    for var in ("USAGE_DB_HOST", "USAGE_DB_PORT", "USAGE_DB_USER", "USAGE_DB_PASSWORD", "USAGE_DB_NAME"):
+        monkeypatch.delenv(var, raising=False)
+    settings = Settings()
+    assert settings.usage_db_host == ""
+    assert settings.usage_db_port == 5432
+    assert settings.usage_db_user == ""
+    assert settings.usage_db_password == ""
+    assert settings.usage_db_name == "hoton_rag"
+
+
+def test_settings_reads_usage_db_component_env(monkeypatch):
+    monkeypatch.setenv("USAGE_DB_HOST", "postgres")
+    monkeypatch.setenv("USAGE_DB_PORT", "5433")
+    monkeypatch.setenv("USAGE_DB_USER", "lmr")
+    monkeypatch.setenv("USAGE_DB_PASSWORD", "we!rd@pass")
+    monkeypatch.setenv("USAGE_DB_NAME", "hoton_rag_custom")
+    settings = Settings()
+    assert settings.usage_db_host == "postgres"
+    assert settings.usage_db_port == 5433
+    assert settings.usage_db_user == "lmr"
+    assert settings.usage_db_password == "we!rd@pass"
+    assert settings.usage_db_name == "hoton_rag_custom"

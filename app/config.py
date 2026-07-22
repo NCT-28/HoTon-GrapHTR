@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     neo4j_password: str = "changeme"
     code_repos_dir: str = "./repos"
     usage_db_url: str = ""
+    usage_db_host: str = ""
+    usage_db_port: int = 5432
+    usage_db_user: str = ""
+    usage_db_password: str = ""
+    usage_db_name: str = "hoton_rag"
     dashboard_user: str = ""
     dashboard_password: str = ""
 
