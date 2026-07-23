@@ -124,6 +124,23 @@ echo "Setup done. .env has DEPLOY_MODE=local."
 echo "Data will be written under \$LOCAL_DATA_DIR (default ./graphtr-out)."
 
 if [ "$RUN_AFTER" -eq 1 ]; then
+  # A leftover server from a previous run holds the local Qdrant storage
+  # lock (./graphtr-out/qdrant), so a fresh start fails with
+  # portalocker.AlreadyLocked. Stop anything already bound to :8030 first.
+  if command -v lsof >/dev/null 2>&1; then
+    EXISTING_PIDS=$(lsof -ti tcp:8030 2>/dev/null || true)
+    if [ -n "$EXISTING_PIDS" ]; then
+      echo ""
+      echo "Stopping existing process(es) on :8030: $EXISTING_PIDS"
+      kill $EXISTING_PIDS 2>/dev/null || true
+      sleep 1
+      STILL_RUNNING=$(lsof -ti tcp:8030 2>/dev/null || true)
+      if [ -n "$STILL_RUNNING" ]; then
+        kill -9 $STILL_RUNNING 2>/dev/null || true
+      fi
+    fi
+  fi
+
   echo ""
   echo "Starting server on :8030..."
   exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
