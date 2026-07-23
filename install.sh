@@ -29,11 +29,20 @@ for arg in "$@"; do
 done
 
 # Already inside a checkout of this repo? Operate in place -- no clone needed.
+# app/mcp_server.py is an unusual enough filename to avoid false-positiving
+# on some other project that happens to also have requirements.txt/app/main.py.
 # Otherwise (e.g. curl-piped on a fresh machine) clone/pull into TARGET_DIR.
-if [ -f "requirements.txt" ] && [ -f "app/main.py" ]; then
+if [ -f "requirements.txt" ] && [ -f "app/main.py" ] && [ -f "app/mcp_server.py" ]; then
   REPO_ROOT="$(pwd)"
 else
-  TARGET_DIR="${TARGET_DIR:-$HOME/.graphtr}"
+  if [ -z "$TARGET_DIR" ]; then
+    if [ -z "${HOME:-}" ]; then
+      echo "Error: \$HOME is not set, cannot determine default install location (~/.graphtr)." >&2
+      echo "Pass a target dir explicitly instead: bash install.sh /path/to/dir" >&2
+      exit 1
+    fi
+    TARGET_DIR="$HOME/.graphtr"
+  fi
 
   if ! command -v git >/dev/null 2>&1; then
     echo "Error: git is required." >&2
