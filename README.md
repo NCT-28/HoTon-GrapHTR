@@ -41,6 +41,18 @@ Requires Qdrant/Neo4j/Postgres running and reachable per `.env`.
 uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 ```
 
+### Zero-service (no Docker, no external DB)
+
+```bash
+pip install -r requirements.txt
+DEPLOY_MODE=local uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
+```
+
+No Qdrant/Neo4j/Postgres needed — vectors, the code graph, and usage tracking
+all write to `graphtr-out/` (`qdrant/`, `graph.sqlite`, `usage.sqlite`).
+`server` and `local` are two independent data stores, not a live migration
+path — switching `DEPLOY_MODE` does not carry data over.
+
 ## Tests
 
 ```bash
