@@ -581,6 +581,9 @@ class SqliteGraphStore(GraphStore):
 @lru_cache
 def get_graph_store() -> GraphStore:
     settings = get_settings()
+    if settings.deploy_mode == "local":
+        os.makedirs(settings.local_data_dir, exist_ok=True)
+        return SqliteGraphStore(os.path.join(settings.local_data_dir, "graph.sqlite"))
     driver = GraphDatabase.driver(
         settings.neo4j_url, auth=(settings.neo4j_user, settings.neo4j_password.get_secret_value())
     )

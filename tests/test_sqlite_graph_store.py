@@ -124,3 +124,21 @@ def test_sqlite_replace_repo_graph_rolls_back_entirely_on_invalid_edge_type(sqli
     # the whole replace must have rolled back -- old data still intact, new data absent
     nodes, _ = sqlite_store.get_subgraph("u1", "r1")
     assert [n["name"] for n in nodes] == ["old_fn"]
+
+
+def test_get_graph_store_returns_sqlite_store_in_local_deploy_mode(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.graph.code_graph_store import get_graph_store
+
+    monkeypatch.setenv("DEPLOY_MODE", "local")
+    monkeypatch.setenv("LOCAL_DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    get_graph_store.cache_clear()
+
+    store = get_graph_store()
+
+    assert isinstance(store, SqliteGraphStore)
+    assert (tmp_path / "graph.sqlite").exists()
+
+    get_graph_store.cache_clear()
+    get_settings.cache_clear()
