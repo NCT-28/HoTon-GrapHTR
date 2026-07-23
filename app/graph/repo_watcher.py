@@ -56,18 +56,17 @@ class RepoWatcherManager:
 
     def reindex(self, user_id: str, repo_id: str, local_path: str) -> None:
         symbols, edges = parse_repo(local_path)
-        self._graph_store.delete_repo(user_id, repo_id)
-        self._graph_store.upsert_repo({
-            "user_id": user_id, "repo_id": repo_id, "source": local_path,
-            "local_path": local_path, "last_indexed_at": datetime.datetime.utcnow().isoformat(),
-        })
-        self._graph_store.upsert_symbols([
-            {"id": s.id, "repo_id": repo_id, "user_id": user_id, "kind": s.kind, "name": s.name,
-             "file_path": s.file_path, "start_line": s.start_line, "end_line": s.end_line, "language": s.language}
-            for s in symbols
-        ])
-        self._graph_store.upsert_code_edges(
-            [{"source": e.source, "target": e.target, "type": e.type} for e in edges]
+        self._graph_store.replace_repo_graph(
+            {
+                "user_id": user_id, "repo_id": repo_id, "source": local_path,
+                "local_path": local_path, "last_indexed_at": datetime.datetime.utcnow().isoformat(),
+            },
+            [
+                {"id": s.id, "repo_id": repo_id, "user_id": user_id, "kind": s.kind, "name": s.name,
+                 "file_path": s.file_path, "start_line": s.start_line, "end_line": s.end_line, "language": s.language}
+                for s in symbols
+            ],
+            [{"source": e.source, "target": e.target, "type": e.type} for e in edges],
         )
         if self._qdrant_client is not None and self._embedder is not None and symbols:
             self._upsert_symbol_embeddings(user_id, symbols)

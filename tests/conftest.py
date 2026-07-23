@@ -44,6 +44,12 @@ class FakeGraphStore(GraphStore):
                 keep_ids.add(sid)
         self.code_edges = [e for e in self.code_edges if e["source"] in keep_ids and e["target"] in keep_ids]
 
+    def replace_repo_graph(self, repo: dict, symbols: list[dict], edges: list[dict]) -> None:
+        self.delete_repo(repo["user_id"], repo["repo_id"])
+        self.upsert_repo(repo)
+        self.upsert_symbols(symbols)
+        self.upsert_code_edges(edges)
+
     def get_repo(self, user_id: str, repo_id: str) -> dict | None:
         return self.repos.get((user_id, repo_id))
 

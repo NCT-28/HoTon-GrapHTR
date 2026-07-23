@@ -49,3 +49,51 @@ def test_get_subgraph_includes_mentioning_text_entities_through_real_neo4j(neo4j
 
     assert {n["id"] for n in nodes} == {"int-s1", "int-e1"}
     assert {"source": "int-e1", "target": "int-s1", "type": "MENTIONS"} in edges
+
+
+def test_replace_repo_graph_populates_repo_symbols_and_edges_in_one_call(neo4j_store):
+    neo4j_store.replace_repo_graph(
+        {"user_id": "test-u1", "repo_id": "test-r1", "source": "x", "local_path": "x", "last_indexed_at": "t1"},
+        [
+            {"id": "int-a", "user_id": "test-u1", "repo_id": "test-r1", "kind": "function", "name": "foo",
+             "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python"},
+            {"id": "int-b", "user_id": "test-u1", "repo_id": "test-r1", "kind": "function", "name": "bar",
+             "file_path": "a.py", "start_line": 3, "end_line": 4, "language": "python"},
+        ],
+        [{"source": "int-a", "target": "int-b", "type": "CALLS"}],
+    )
+
+    nodes, edges = neo4j_store.get_subgraph("test-u1", "test-r1")
+
+    assert {n["name"] for n in nodes} == {"foo", "bar"}
+    assert edges == [{"source": "int-a", "target": "int-b", "type": "CALLS"}]
+    assert neo4j_store.get_repo("test-u1", "test-r1")["local_path"] == "x"
+
+
+def test_replace_repo_graph_is_atomic_no_partial_state_visible_after_failure(neo4j_store):
+    """Regression test: a caller re-exporting the graph must never observe all-symbols-no-edges
+    (or any other partial mix) mid-replace. Simulates a failure partway through the replace
+    (bad edge type, discovered after symbols/repo have been queued in the same transaction) and
+    asserts the OLD graph is still fully intact afterward -- proving the whole operation rolled
+    back as a unit rather than committing symbols before edges."""
+    neo4j_store.replace_repo_graph(
+        {"user_id": "test-u1", "repo_id": "test-r1", "source": "x", "local_path": "x", "last_indexed_at": "t1"},
+        [{"id": "int-old", "user_id": "test-u1", "repo_id": "test-r1", "kind": "function", "name": "old_foo",
+          "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python"}],
+        [],
+    )
+
+    with pytest.raises(ValueError):
+        neo4j_store.replace_repo_graph(
+            {"user_id": "test-u1", "repo_id": "test-r1", "source": "x", "local_path": "x", "last_indexed_at": "t2"},
+            [{"id": "int-new", "user_id": "test-u1", "repo_id": "test-r1", "kind": "function", "name": "new_bar",
+              "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python"}],
+            [{"source": "int-new", "target": "int-old", "type": "NOT_A_REAL_EDGE_TYPE"}],
+        )
+
+    nodes, _ = neo4j_store.get_subgraph("test-u1", "test-r1")
+    assert {n["name"] for n in nodes} == {"old_foo"}, (
+        "old data should be fully intact after a failed replace -- "
+        "seeing new_bar (partial write) or an empty graph (partial delete) both indicate the "
+        "replace is not atomic"
+    )

@@ -34,6 +34,13 @@ class GraphStore(ABC):
     def delete_repo(self, user_id: str, repo_id: str) -> None: ...
 
     @abstractmethod
+    def replace_repo_graph(self, repo: dict, symbols: list[dict], edges: list[dict]) -> None:
+        """Atomically replace a repo's entire code graph (old symbols/edges deleted, new
+        repo/symbols/edges written) as a single unit -- a reader must never observe a
+        partial state (e.g. all-symbols-no-edges) mid-replace."""
+        ...
+
+    @abstractmethod
     def get_repo(self, user_id: str, repo_id: str) -> dict | None: ...
 
     @abstractmethod
@@ -116,6 +123,56 @@ class Neo4jGraphStore(GraphStore):
             "MATCH (r:Repo {user_id: $user_id, repo_id: $repo_id}) DETACH DELETE r",
             user_id=user_id, repo_id=repo_id,
         )
+
+    def replace_repo_graph(self, repo: dict, symbols: list[dict], edges: list[dict]) -> None:
+        user_id, repo_id = repo["user_id"], repo["repo_id"]
+
+        def _work(tx):
+            tx.run(
+                "MATCH (n:CodeSymbol {user_id: $user_id, repo_id: $repo_id}) DETACH DELETE n",
+                user_id=user_id, repo_id=repo_id,
+            )
+            tx.run(
+                "MATCH (r:Repo {user_id: $user_id, repo_id: $repo_id}) DETACH DELETE r",
+                user_id=user_id, repo_id=repo_id,
+            )
+            tx.run(
+                """
+                MERGE (r:Repo {repo_id: $repo_id, user_id: $user_id})
+                SET r.source = $source, r.local_path = $local_path, r.last_indexed_at = $last_indexed_at
+                """,
+                **repo,
+            )
+            if symbols:
+                tx.run(
+                    """
+                    UNWIND $symbols AS s
+                    MERGE (n:CodeSymbol {id: s.id})
+                    SET n.repo_id = s.repo_id, n.user_id = s.user_id, n.kind = s.kind,
+                        n.name = s.name, n.file_path = s.file_path, n.start_line = s.start_line,
+                        n.end_line = s.end_line, n.language = s.language
+                    """,
+                    symbols=symbols,
+                )
+
+            by_type: dict[str, list[dict]] = {}
+            for e in edges:
+                if e["type"] not in _CODE_EDGE_TYPES:
+                    raise ValueError(f"unknown code edge type: {e['type']}")
+                by_type.setdefault(e["type"], []).append({"source": e["source"], "target": e["target"]})
+
+            for edge_type, batch in by_type.items():
+                tx.run(
+                    f"""
+                    UNWIND $batch AS e
+                    MATCH (a:CodeSymbol {{id: e.source}}), (b:CodeSymbol {{id: e.target}})
+                    MERGE (a)-[:{edge_type}]->(b)
+                    """,
+                    batch=batch,
+                )
+
+        with self._driver.session() as session:
+            session.execute_write(_work)
 
     def get_repo(self, user_id: str, repo_id: str) -> dict | None:
         records, _, _ = self._driver.execute_query(
