@@ -43,6 +43,21 @@ uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 
 ### Zero-service (no Docker, no external DB)
 
+Fastest path on a new machine:
+
+```bash
+git clone git@github.com:NCT-28/HoTon-GrapHTR.git
+cd HoTon-GrapHTR
+bash scripts/setup_zero_service.sh --run   # creates .venv, installs deps, sets DEPLOY_MODE=local, starts the server
+```
+
+`scripts/setup_zero_service.sh` (no `--run`) does the same setup without
+starting the server — creates `.venv`, installs `requirements.txt`, copies
+`docker/.env.example` to `.env` if missing, and sets `DEPLOY_MODE=local` in
+it. Safe to re-run.
+
+Or manually:
+
 ```bash
 pip install -r requirements.txt
 DEPLOY_MODE=local uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
