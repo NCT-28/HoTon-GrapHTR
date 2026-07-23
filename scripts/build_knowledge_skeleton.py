@@ -8,7 +8,20 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+def _find_repo_root(start: Path) -> Path:
+    """Walk up from `start` looking for a `.git` directory. Marker-based (not a
+    fixed parent-count) because this script is bundled at different depths in
+    different projects: hoton-rag/scripts/ in this repo, but
+    .claude/skills/graphtr-knowledge/scripts/ in a project this was installed
+    into via init_graphtr_skills.py."""
+    start = start.resolve()
+    for candidate in [start, *start.parents]:
+        if (candidate / ".git").exists():
+            return candidate
+    raise RuntimeError(f"could not find repo root (no .git found) walking up from {start}")
+
+
+REPO_ROOT = _find_repo_root(Path(__file__).parent)
 GRAPH_PATH = REPO_ROOT / "graphtr-out" / "graph.json"
 OUT_DIR = REPO_ROOT / "graphtr-out" / "knowledge"
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
