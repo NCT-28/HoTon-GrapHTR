@@ -257,7 +257,7 @@ def export_graph_snapshot_impl(ctx: ToolContext, user_id: str, repo_id: str) -> 
 
 
 def build_mcp_server(ctx: ToolContext) -> FastMCP:
-    mcp = FastMCP("hoton-rag", stateless_http=True, json_response=True)
+    mcp = FastMCP("hoton-graphtr", stateless_http=True, json_response=True)
 
     @mcp.tool()
     async def get_rag_context(user_id: str, query: str) -> RagContextResult:

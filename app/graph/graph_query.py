@@ -1,6 +1,6 @@
 """Pure graph-traversal algorithms over plain node/edge lists — no database
 dependency, so these are testable in isolation. Mirrors graphify's
-query/path/explain modes, applied to hoton-rag's own graph data."""
+query/path/explain modes, applied to hoton-graphtr's own graph data."""
 
 import networkx as nx
 

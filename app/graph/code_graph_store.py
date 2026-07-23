@@ -1,4 +1,4 @@
-"""Graph storage interface for hoton-rag's unified code-structure + text-entity
+"""Graph storage interface for hoton-graphtr's unified code-structure + text-entity
 graph, plus the real Neo4j-backed implementation. `FakeGraphStore` (an
 in-memory test double implementing the same interface) lives in
 tests/conftest.py so every consumer of GraphStore can be unit-tested without a

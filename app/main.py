@@ -60,7 +60,7 @@ def create_app(
         cleanup_task.cancel()
         resolved_watcher_manager.stop()
 
-    app = FastAPI(title="hoton-rag", lifespan=lifespan)
+    app = FastAPI(title="hoton-graphtr", lifespan=lifespan)
 
     router = build_documents_router(
         get_client_fn, get_embedder_fn, lambda: resolved_graph_store, get_llm_fn, get_usage_store_fn,

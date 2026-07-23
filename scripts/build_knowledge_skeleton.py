@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generates graphtr-out/knowledge/*.md skeletons: fact tables auto-filled from
 graph.json/CLAUDE.md/repo manifests, plus <!-- TODO --> blocks for Claude to
-fill in with narrative. Run via: python3 hoton-rag/scripts/build_knowledge_skeleton.py
+fill in with narrative. Run via: python3 hoton-graphtr/scripts/build_knowledge_skeleton.py
 """
 import json
 import re
@@ -11,7 +11,7 @@ from pathlib import Path
 def _find_repo_root(start: Path) -> Path:
     """Walk up from `start` looking for a `.git` directory. Marker-based (not a
     fixed parent-count) because this script is bundled at different depths in
-    different projects: hoton-rag/scripts/ in this repo, but
+    different projects: hoton-graphtr/scripts/ in this repo, but
     .claude/skills/graphtr-knowledge/scripts/ in a project this was installed
     into via init_graphtr_skills.py."""
     start = start.resolve()
@@ -26,7 +26,7 @@ GRAPH_PATH = REPO_ROOT / "graphtr-out" / "graph.json"
 OUT_DIR = REPO_ROOT / "graphtr-out" / "knowledge"
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 
-SERVICES = ["hoton-lmr", "hoton-lmt", "hoton-lmu", "hoton-browser", "hoton-rag"]
+SERVICES = ["hoton-lmr", "hoton-lmt", "hoton-lmu", "hoton-browser", "hoton-graphtr"]
 
 
 def extract_section(text: str, heading: str) -> str:
@@ -120,7 +120,7 @@ def detect_testing() -> str:
         for name in ("lint", "typecheck", "test"):
             if name in scripts:
                 lines.append(f"- `hoton-lmu`: `npm run {name}` -> `{scripts[name]}`")
-    for svc in ("hoton-lmt", "hoton-rag"):
+    for svc in ("hoton-lmt", "hoton-graphtr"):
         tests_dir = REPO_ROOT / svc / "tests"
         if tests_dir.is_dir():
             count = len(list(tests_dir.glob("test_*.py")))

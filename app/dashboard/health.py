@@ -1,4 +1,4 @@
-"""Live health pings for hoton-rag's four dependencies, used by
+"""Live health pings for hoton-graphtr's four dependencies, used by
 GET /api/dashboard/summary. Each check catches its own errors — one dependency
 being down must not break the others or the endpoint as a whole."""
 
