@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 
 from qdrant_client import QdrantClient
@@ -61,6 +62,10 @@ def bootstrap_collections(client: QdrantClient, embed_dim: int) -> None:
 @lru_cache
 def get_qdrant_client() -> QdrantClient:
     settings = get_settings()
-    client = QdrantClient(url=settings.qdrant_url)
+    if settings.deploy_mode == "local":
+        os.makedirs(settings.local_data_dir, exist_ok=True)
+        client = QdrantClient(path=os.path.join(settings.local_data_dir, "qdrant"))
+    else:
+        client = QdrantClient(url=settings.qdrant_url)
     bootstrap_collections(client, embed_dim=settings.embed_dim)
     return client
