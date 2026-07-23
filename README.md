@@ -43,26 +43,28 @@ uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 
 ### Zero-service (no Docker, no external DB)
 
-Fastest path on a brand-new machine (nothing pre-cloned, public repo, plain HTTPS):
+One script, `install.sh`, handles both a brand-new machine (clones the repo
+first) and an existing checkout (runs in place) — same file either way.
+
+Brand-new machine, nothing cloned yet (public repo, plain HTTPS, no auth):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/install.sh | bash -s -- --run
 ```
 
-Clones into `./HoTon-GrapHTR` and runs the setup below automatically. Custom
-target dir: `curl -fsSL .../install.sh | bash -s -- my-dir` (note the `-s --`
-needed to pass args through a piped script).
+Clones into `./HoTon-GrapHTR`, sets up a venv, installs deps, sets
+`DEPLOY_MODE=local` in `.env`, and starts the server. Custom target dir:
+`bash -s -- my-dir --run` (note the `-s --` needed to pass args through a
+piped script). Drop `--run` to only set up without starting.
 
-If you already have the repo cloned:
+Already have the repo cloned — run from the repo root:
 
 ```bash
-bash scripts/setup_zero_service.sh --run   # creates .venv, installs deps, sets DEPLOY_MODE=local, starts the server
+bash install.sh --run
 ```
 
-`scripts/setup_zero_service.sh` (no `--run`) does the same setup without
-starting the server — creates `.venv`, installs `requirements.txt`, copies
-`docker/.env.example` to `.env` if missing, and sets `DEPLOY_MODE=local` in
-it. Safe to re-run.
+Safe to re-run; skips the clone since it detects it's already inside the
+checkout (`requirements.txt` + `app/main.py` present in the cwd).
 
 Or manually:
 
@@ -114,8 +116,8 @@ app/
   config.py   # Settings (pydantic-settings, env-driven)
   main.py     # FastAPI app factory
   mcp_server.py
-scripts/      # knowledge-base build/index, skill bootstrap, setup_zero_service.sh
+scripts/      # knowledge-base build/index, skill bootstrap
 tests/
 docker/       # Dockerfile, docker-compose.yml, .env.example
-install.sh    # curl-pipeable installer for a brand-new machine
+install.sh    # zero-service installer -- clones (if needed) + sets up + runs
 ```
