@@ -2,7 +2,7 @@
 """Uploads graphtr-out/knowledge/*.md into hoton-graphtr's document RAG under a
 dedicated project rag_user_id (minted into manifest.json on first run).
 Full-regenerate: deletes any existing doc with the same title before
-re-uploading. Run via: python3 hoton-graphtr/scripts/index_knowledge.py
+re-uploading. Run via: python3 scripts/index_knowledge.py
 
 Note: hoton-graphtr's /api/documents upload derives `title` from the uploaded
 filename's stem (see app/rag/documents.py::process_uploaded_file), not from
@@ -21,7 +21,7 @@ from pathlib import Path
 def _find_repo_root(start: Path) -> Path:
     """Walk up from `start` looking for a `.git` directory. Marker-based (not a
     fixed parent-count) because this script is bundled at different depths in
-    different projects: hoton-graphtr/scripts/ in this repo, but
+    different projects: scripts/ in this repo, but
     .claude/skills/graphtr-knowledge/scripts/ in a project this was installed
     into via init_graphtr_skills.py."""
     start = start.resolve()

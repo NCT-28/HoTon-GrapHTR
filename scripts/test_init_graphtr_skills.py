@@ -4,11 +4,12 @@ from init_graphtr_skills import _rewrite_knowledge_skill_paths
 
 
 def test_rewrite_replaces_source_script_path_prefix():
-    text = "Run `python3 hoton-graphtr/scripts/build_knowledge_skeleton.py` then `python3 hoton-graphtr/scripts/index_knowledge.py`."
+    text = "Run `python3 scripts/build_knowledge_skeleton.py` then `python3 scripts/index_knowledge.py`."
     result = _rewrite_knowledge_skill_paths(text)
-    assert "hoton-graphtr/scripts/" not in result
-    assert ".claude/skills/graphtr-knowledge/scripts/build_knowledge_skeleton.py" in result
-    assert ".claude/skills/graphtr-knowledge/scripts/index_knowledge.py" in result
+    assert result == (
+        "Run `python3 .claude/skills/graphtr-knowledge/scripts/build_knowledge_skeleton.py` "
+        "then `python3 .claude/skills/graphtr-knowledge/scripts/index_knowledge.py`."
+    )
 
 
 def test_rewrite_leaves_unrelated_text_unchanged():

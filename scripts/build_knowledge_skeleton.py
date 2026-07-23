@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generates graphtr-out/knowledge/*.md skeletons: fact tables auto-filled from
 graph.json/CLAUDE.md/repo manifests, plus <!-- TODO --> blocks for Claude to
-fill in with narrative. Run via: python3 hoton-graphtr/scripts/build_knowledge_skeleton.py
+fill in with narrative. Run via: python3 scripts/build_knowledge_skeleton.py
 """
 import json
 import re
@@ -11,7 +11,7 @@ from pathlib import Path
 def _find_repo_root(start: Path) -> Path:
     """Walk up from `start` looking for a `.git` directory. Marker-based (not a
     fixed parent-count) because this script is bundled at different depths in
-    different projects: hoton-graphtr/scripts/ in this repo, but
+    different projects: scripts/ in this repo, but
     .claude/skills/graphtr-knowledge/scripts/ in a project this was installed
     into via init_graphtr_skills.py."""
     start = start.resolve()
