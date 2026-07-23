@@ -43,11 +43,19 @@ uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 
 ### Zero-service (no Docker, no external DB)
 
-Fastest path on a new machine:
+Fastest path on a brand-new machine (nothing pre-cloned, public repo, plain HTTPS):
 
 ```bash
-git clone git@github.com:NCT-28/HoTon-GrapHTR.git
-cd HoTon-GrapHTR
+curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/scripts/install.sh | bash
+```
+
+Clones into `./HoTon-GrapHTR` and runs the setup below automatically. Custom
+target dir: `curl -fsSL .../install.sh | bash -s -- my-dir` (note the `-s --`
+needed to pass args through a piped script).
+
+If you already have the repo cloned:
+
+```bash
 bash scripts/setup_zero_service.sh --run   # creates .venv, installs deps, sets DEPLOY_MODE=local, starts the server
 ```
 
