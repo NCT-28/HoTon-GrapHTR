@@ -15,9 +15,15 @@
 #
 # Sets up a venv, installs requirements.txt, writes DEPLOY_MODE=local into
 # .env, and (with --run) starts the server. No Docker, no Qdrant/Neo4j/Postgres.
+# Clones the develop branch by default (override with HOTON_GRAPHTR_REPO_BRANCH).
 set -euo pipefail
 
 REPO_URL="${HOTON_GRAPHTR_REPO_URL:-https://github.com/NCT-28/HoTon-GrapHTR.git}"
+# Zero-service (DEPLOY_MODE=local) code lives on develop and hasn't been
+# merged to main yet -- cloning the default branch gets a Settings class
+# without the deploy_mode field, so DEPLOY_MODE=local fails with
+# pydantic's extra_forbidden. Pin to develop until that merge happens.
+REPO_BRANCH="${HOTON_GRAPHTR_REPO_BRANCH:-develop}"
 
 RUN_AFTER=0
 TARGET_DIR=""
@@ -51,10 +57,11 @@ else
 
   if [ -d "$TARGET_DIR/.git" ]; then
     echo "Found existing checkout at $TARGET_DIR, pulling latest..."
+    git -C "$TARGET_DIR" checkout "$REPO_BRANCH"
     git -C "$TARGET_DIR" pull --ff-only
   else
-    echo "Cloning $REPO_URL into $TARGET_DIR..."
-    git clone "$REPO_URL" "$TARGET_DIR"
+    echo "Cloning $REPO_URL ($REPO_BRANCH) into $TARGET_DIR..."
+    git clone -b "$REPO_BRANCH" "$REPO_URL" "$TARGET_DIR"
   fi
 
   REPO_ROOT="$(cd "$TARGET_DIR" && pwd)"
