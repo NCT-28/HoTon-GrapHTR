@@ -7,7 +7,10 @@
 # Already have the repo cloned -- run from the repo root:
 #   bash install.sh --run
 #
-# Custom target dir when piping (note the `-s --` to pass args through a piped script):
+# Clones into ~/.graphtr by default -- a fixed location so running the
+# curl one-liner from inside some other project doesn't drop a checkout into
+# that project's directory. Custom target dir (note the `-s --` to pass args
+# through a piped script):
 #   curl -fsSL .../install.sh | bash -s -- my-dir --run
 #
 # Sets up a venv, installs requirements.txt, writes DEPLOY_MODE=local into
@@ -30,7 +33,7 @@ done
 if [ -f "requirements.txt" ] && [ -f "app/main.py" ]; then
   REPO_ROOT="$(pwd)"
 else
-  TARGET_DIR="${TARGET_DIR:-HoTon-GrapHTR}"
+  TARGET_DIR="${TARGET_DIR:-$HOME/.graphtr}"
 
   if ! command -v git >/dev/null 2>&1; then
     echo "Error: git is required." >&2

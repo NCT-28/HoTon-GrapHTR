@@ -52,10 +52,12 @@ Brand-new machine, nothing cloned yet (public repo, plain HTTPS, no auth):
 curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/develop/install.sh | bash -s -- --run
 ```
 
-Clones into `./HoTon-GrapHTR`, sets up a venv, installs deps, sets
-`DEPLOY_MODE=local` in `.env`, and starts the server. Custom target dir:
-`bash -s -- my-dir --run` (note the `-s --` needed to pass args through a
-piped script). Drop `--run` to only set up without starting.
+Clones into `~/.graphtr` (a fixed location, so this doesn't drop a checkout
+into whatever project directory you happened to run the curl command from),
+sets up a venv, installs deps, sets `DEPLOY_MODE=local` in `.env`, and starts
+the server. Custom target dir: `bash -s -- my-dir --run` (note the `-s --`
+needed to pass args through a piped script). Drop `--run` to only set up
+without starting.
 
 Already have the repo cloned — run from the repo root:
 
