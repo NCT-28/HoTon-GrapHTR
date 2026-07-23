@@ -258,6 +258,9 @@ class SqliteUsageStore(UsageStore):
 @lru_cache
 def get_usage_store() -> "UsageStore | None":
     settings = get_settings()
+    if settings.deploy_mode == "local":
+        os.makedirs(settings.local_data_dir, exist_ok=True)
+        return SqliteUsageStore(os.path.join(settings.local_data_dir, "usage.sqlite"))
     if settings.usage_db_host:
         url = build_usage_db_url(
             settings.usage_db_host, settings.usage_db_port,

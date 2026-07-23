@@ -69,3 +69,23 @@ def test_sqlite_usage_store_persists_across_reconnect(tmp_path):
     rows = SqliteUsageStore(db_path).counts_by_tool(since=now - timedelta(hours=1))
 
     assert rows == [{"tool_name": "embed_text", "calls": 1, "errors": 0, "p50_ms": 1.0}]
+
+
+def test_get_usage_store_returns_sqlite_store_in_local_deploy_mode(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.dashboard.usage_store import get_usage_store
+
+    monkeypatch.setenv("DEPLOY_MODE", "local")
+    monkeypatch.setenv("LOCAL_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("USAGE_DB_HOST", raising=False)
+    monkeypatch.delenv("USAGE_DB_URL", raising=False)
+    get_settings.cache_clear()
+    get_usage_store.cache_clear()
+
+    store = get_usage_store()
+
+    assert isinstance(store, SqliteUsageStore)
+    assert (tmp_path / "usage.sqlite").exists()
+
+    get_usage_store.cache_clear()
+    get_settings.cache_clear()
