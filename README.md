@@ -49,7 +49,7 @@ first) and an existing checkout (runs in place) — same file either way.
 Brand-new machine, nothing cloned yet (public repo, plain HTTPS, no auth):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/install.sh | bash -s -- --run
+curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/develop/install.sh | bash -s -- --run
 ```
 
 Clones into `./HoTon-GrapHTR`, sets up a venv, installs deps, sets

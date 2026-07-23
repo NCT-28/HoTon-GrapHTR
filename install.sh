@@ -2,7 +2,7 @@
 # Single-file zero-service (DEPLOY_MODE=local) installer.
 #
 # Brand-new machine, nothing cloned yet (public repo, plain HTTPS, no auth):
-#   curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/develop/install.sh | bash
 #
 # Already have the repo cloned -- run from the repo root:
 #   bash install.sh --run
