@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     usage_db_name: str = "hoton_rag"
     dashboard_user: str = ""
     dashboard_password: SecretStr = SecretStr("")
+    deploy_mode: str = "server"          # "server" (default, Qdrant/Neo4j/Postgres) | "local" (zero-service, file-backed)
+    local_data_dir: str = "./graphtr-out"
 
     class Config:
         env_file = ".env"

@@ -65,3 +65,19 @@ def test_settings_reads_usage_db_component_env(monkeypatch):
     assert settings.usage_db_user == "lmr"
     assert settings.usage_db_password.get_secret_value() == "we!rd@pass"
     assert settings.usage_db_name == "hoton_rag_custom"
+
+
+def test_settings_deploy_mode_defaults(monkeypatch):
+    monkeypatch.delenv("DEPLOY_MODE", raising=False)
+    monkeypatch.delenv("LOCAL_DATA_DIR", raising=False)
+    settings = Settings()
+    assert settings.deploy_mode == "server"
+    assert settings.local_data_dir == "./graphtr-out"
+
+
+def test_settings_reads_deploy_mode_env(monkeypatch):
+    monkeypatch.setenv("DEPLOY_MODE", "local")
+    monkeypatch.setenv("LOCAL_DATA_DIR", "/tmp/graphtr-data")
+    settings = Settings()
+    assert settings.deploy_mode == "local"
+    assert settings.local_data_dir == "/tmp/graphtr-data"
