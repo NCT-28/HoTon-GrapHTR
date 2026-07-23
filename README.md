@@ -53,6 +53,26 @@ all write to `graphtr-out/` (`qdrant/`, `graph.sqlite`, `usage.sqlite`).
 `server` and `local` are two independent data stores, not a live migration
 path — switching `DEPLOY_MODE` does not carry data over.
 
+**Verify it's running:**
+
+```bash
+curl http://localhost:8030/health
+# {"status":"ok"}
+
+ls graphtr-out/
+# qdrant/  graph.sqlite  usage.sqlite
+```
+
+**Config:** set `DEPLOY_MODE=local` either as an env var (as above) or in
+`.env` (`cp docker/.env.example .env`, then edit `DEPLOY_MODE=local`).
+`LOCAL_DATA_DIR` (default `./graphtr-out`) controls where the three files
+land — set it to point elsewhere if you don't want them under the repo.
+
+**Switching back to `server` mode:** unset `DEPLOY_MODE` (or set it back to
+`server`) and restart — it reconnects to Qdrant/Neo4j/Postgres per `.env`.
+The `graphtr-out/` files from local mode are untouched and unused; delete
+them manually if you want to reclaim the disk space.
+
 ## Tests
 
 ```bash
