@@ -33,5 +33,7 @@ htmlcov/
 repos/
 graphtr-out/*.json
 graphtr-out/*.html
+graphtr-out/*.sqlite
+graphtr-out/qdrant/
 docker/code-repos/
 docker/models/
