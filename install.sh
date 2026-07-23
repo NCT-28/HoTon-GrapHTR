@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # One-liner installer for a brand-new machine (no existing clone needed):
 #
-#   curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/install.sh | bash
 #
 # Custom target directory (note the `-s --` when piping args to a piped script):
 #
-#   curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/scripts/install.sh | bash -s -- my-dir
+#   curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/install.sh | bash -s -- my-dir
 #
 # Clones the repo (public, plain HTTPS, no auth needed), then delegates to
 # scripts/setup_zero_service.sh inside the clone for the actual Python/venv setup.

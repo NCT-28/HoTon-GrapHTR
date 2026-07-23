@@ -46,7 +46,7 @@ uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 Fastest path on a brand-new machine (nothing pre-cloned, public repo, plain HTTPS):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/main/install.sh | bash
 ```
 
 Clones into `./HoTon-GrapHTR` and runs the setup below automatically. Custom
@@ -114,7 +114,8 @@ app/
   config.py   # Settings (pydantic-settings, env-driven)
   main.py     # FastAPI app factory
   mcp_server.py
-scripts/      # knowledge-base build/index, skill bootstrap
+scripts/      # knowledge-base build/index, skill bootstrap, setup_zero_service.sh
 tests/
 docker/       # Dockerfile, docker-compose.yml, .env.example
+install.sh    # curl-pipeable installer for a brand-new machine
 ```
