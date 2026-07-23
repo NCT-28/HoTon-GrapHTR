@@ -4,6 +4,8 @@ content). `FakeUsageStore` (an in-memory test double implementing the same
 interface) lives in tests/conftest.py so every consumer can be unit-tested
 without a live Postgres instance, mirroring GraphStore/FakeGraphStore."""
 
+import os
+import sqlite3
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -167,6 +169,89 @@ class PostgresUsageStore(UsageStore):
 
     def ping(self) -> bool:
         self._with_retry(lambda: self._conn.execute("SELECT 1"))
+        return True
+
+
+class SqliteUsageStore(UsageStore):
+    """File-backed UsageStore for DEPLOY_MODE=local. p50 is computed in
+    Python (sorted durations, middle element) since SQLite has no
+    percentile_cont() — same approach FakeUsageStore already uses in
+    tests/conftest.py."""
+
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._lock = threading.Lock()
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS usage_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tool_name TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    repo_id TEXT,
+                    success INTEGER NOT NULL,
+                    error_message TEXT,
+                    duration_ms REAL NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS usage_events_tool_time_idx ON usage_events (tool_name, created_at)"
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS usage_events_user_time_idx ON usage_events (user_id, created_at)"
+            )
+
+    def record(self, event: dict) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO usage_events (tool_name, user_id, repo_id, success, error_message, duration_ms, created_at)
+                VALUES (:tool_name, :user_id, :repo_id, :success, :error_message, :duration_ms, :created_at)
+                """,
+                {**event, "success": int(event["success"]), "created_at": event["created_at"].isoformat()},
+            )
+
+    def counts_by_tool(self, since: datetime) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT tool_name, success, duration_ms FROM usage_events WHERE created_at >= ?",
+                (since.isoformat(),),
+            ).fetchall()
+
+        by_tool: dict[str, dict] = {}
+        for row in rows:
+            entry = by_tool.setdefault(
+                row["tool_name"], {"tool_name": row["tool_name"], "calls": 0, "errors": 0, "durations": []}
+            )
+            entry["calls"] += 1
+            if not row["success"]:
+                entry["errors"] += 1
+            entry["durations"].append(row["duration_ms"])
+
+        result = []
+        for entry in by_tool.values():
+            durations = sorted(entry.pop("durations"))
+            entry["p50_ms"] = durations[len(durations) // 2] if durations else 0.0
+            result.append(entry)
+        result.sort(key=lambda r: r["calls"], reverse=True)
+        return result
+
+    def counts_by_user(self, since: datetime) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT user_id, count(*) AS calls FROM usage_events "
+                "WHERE created_at >= ? GROUP BY user_id ORDER BY calls DESC",
+                (since.isoformat(),),
+            ).fetchall()
+        return [{"user_id": row["user_id"], "calls": row["calls"]} for row in rows]
+
+    def ping(self) -> bool:
+        with self._lock:
+            self._conn.execute("SELECT 1")
         return True
 
 
