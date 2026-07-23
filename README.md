@@ -66,6 +66,17 @@ bash install.sh --run
 Safe to re-run; skips the clone since it detects it's already inside the
 checkout (`requirements.txt` + `app/main.py` present in the cwd).
 
+To remove what `install.sh` created (run from the repo root):
+
+```bash
+bash uninstall.sh              # prompts, removes .venv/ and graphtr-out/'s local data (graph.sqlite, usage.sqlite, qdrant/)
+bash uninstall.sh -y           # same, no prompt
+bash uninstall.sh --purge-env  # also delete .env
+```
+
+Never touches the git checkout itself, or `graphtr-out/`'s tracked tooling
+(`build_viewer.py`, `query.py`) — only the files `install.sh` generates.
+
 Or manually:
 
 ```bash
@@ -120,4 +131,5 @@ scripts/      # knowledge-base build/index, skill bootstrap
 tests/
 docker/       # Dockerfile, docker-compose.yml, .env.example
 install.sh    # zero-service installer -- clones (if needed) + sets up + runs
+uninstall.sh  # removes what install.sh created (.venv/, local data, optionally .env)
 ```
