@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -15,16 +16,18 @@ class Settings(BaseSettings):
     chunk_overlap: int = 180
     neo4j_url: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
-    neo4j_password: str = "changeme"
+    # No hardcoded default: an unset NEO4J_PASSWORD must fail auth against Neo4j,
+    # not silently connect with a guessable credential.
+    neo4j_password: SecretStr = SecretStr("")
     code_repos_dir: str = "./repos"
     usage_db_url: str = ""
     usage_db_host: str = ""
     usage_db_port: int = 5432
     usage_db_user: str = ""
-    usage_db_password: str = ""
+    usage_db_password: SecretStr = SecretStr("")
     usage_db_name: str = "hoton_rag"
     dashboard_user: str = ""
-    dashboard_password: str = ""
+    dashboard_password: SecretStr = SecretStr("")
 
     class Config:
         env_file = ".env"

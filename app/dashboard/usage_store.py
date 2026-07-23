@@ -87,15 +87,35 @@ def bootstrap_usage_database(usage_db_url: str) -> None:
 
 
 class PostgresUsageStore(UsageStore):
-    def __init__(self, conn: psycopg.Connection):
-        self._conn = conn
+    def __init__(self, url: str):
+        self._url = url
         self._lock = threading.Lock()
+        self._conn = psycopg.connect(url, autocommit=False)
+
+    def _reconnect(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+        self._conn = psycopg.connect(self._url, autocommit=False)
+
+    def _with_retry(self, fn):
+        # A dead connection (Postgres restart, idle timeout, network blip)
+        # would otherwise stay broken until process restart, since this store
+        # is cached as a process-lifetime singleton by get_usage_store().
+        # Reconnect once and retry before giving up.
+        with self._lock:
+            try:
+                return fn()
+            except psycopg.OperationalError:
+                self._reconnect()
+                return fn()
 
     def record(self, event: dict) -> None:
         # event may include a "created_at" key (track_usage always sets one) —
         # unused here since the column defaults to now(); psycopg only binds
         # the %(...)s names the query text references, so the extra key is fine.
-        with self._lock:
+        def _do():
             self._conn.execute(
                 """
                 INSERT INTO usage_events (tool_name, user_id, repo_id, success, error_message, duration_ms)
@@ -105,9 +125,11 @@ class PostgresUsageStore(UsageStore):
             )
             self._conn.commit()
 
+        self._with_retry(_do)
+
     def counts_by_tool(self, since: datetime) -> list[dict]:
-        with self._lock:
-            rows = self._conn.execute(
+        def _do():
+            return self._conn.execute(
                 """
                 SELECT tool_name,
                        count(*) AS calls,
@@ -120,14 +142,16 @@ class PostgresUsageStore(UsageStore):
                 """,
                 {"since": since},
             ).fetchall()
+
+        rows = self._with_retry(_do)
         return [
             {"tool_name": r[0], "calls": r[1], "errors": r[2], "p50_ms": round(r[3], 1) if r[3] is not None else 0.0}
             for r in rows
         ]
 
     def counts_by_user(self, since: datetime) -> list[dict]:
-        with self._lock:
-            rows = self._conn.execute(
+        def _do():
+            return self._conn.execute(
                 """
                 SELECT user_id, count(*) AS calls
                 FROM usage_events
@@ -137,11 +161,12 @@ class PostgresUsageStore(UsageStore):
                 """,
                 {"since": since},
             ).fetchall()
+
+        rows = self._with_retry(_do)
         return [{"user_id": r[0], "calls": r[1]} for r in rows]
 
     def ping(self) -> bool:
-        with self._lock:
-            self._conn.execute("SELECT 1")
+        self._with_retry(lambda: self._conn.execute("SELECT 1"))
         return True
 
 
@@ -151,12 +176,11 @@ def get_usage_store() -> "UsageStore | None":
     if settings.usage_db_host:
         url = build_usage_db_url(
             settings.usage_db_host, settings.usage_db_port,
-            settings.usage_db_user, settings.usage_db_password, settings.usage_db_name,
+            settings.usage_db_user, settings.usage_db_password.get_secret_value(), settings.usage_db_name,
         )
     elif settings.usage_db_url:
         url = settings.usage_db_url
     else:
         return None
     bootstrap_usage_database(url)
-    conn = psycopg.connect(url, autocommit=False)
-    return PostgresUsageStore(conn)
+    return PostgresUsageStore(url)

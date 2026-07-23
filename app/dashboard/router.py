@@ -18,10 +18,11 @@ _security = HTTPBasic()
 
 def _require_auth(credentials: HTTPBasicCredentials = Depends(_security)) -> None:
     settings = get_settings()
-    if not settings.dashboard_user or not settings.dashboard_password:
+    dashboard_password = settings.dashboard_password.get_secret_value()
+    if not settings.dashboard_user or not dashboard_password:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="dashboard auth not configured")
     user_ok = secrets.compare_digest(credentials.username, settings.dashboard_user)
-    pass_ok = secrets.compare_digest(credentials.password, settings.dashboard_password)
+    pass_ok = secrets.compare_digest(credentials.password, dashboard_password)
     if not (user_ok and pass_ok):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials",

@@ -7,6 +7,7 @@ scp-style (git@host:path) URLs are rejected rather than accepted without a
 safety check."""
 
 import os
+import shutil
 import subprocess
 
 from app.config import get_settings
@@ -21,6 +22,12 @@ def resolve_repo_source(source: str, repo_id: str) -> str:
         settings = get_settings()
         os.makedirs(settings.code_repos_dir, exist_ok=True)
         dest = os.path.join(settings.code_repos_dir, repo_id)
+        if os.path.exists(dest):
+            # dest is a managed clone directory scoped to this repo_id, safe to
+            # clear — `git clone` refuses to clone into an existing non-empty
+            # directory, which would otherwise break any re-ingest/refresh of
+            # the same repo_id with an uncaught CalledProcessError.
+            shutil.rmtree(dest)
         subprocess.run(["git", "clone", "--depth", "1", source, dest], check=True, capture_output=True)
         return dest
 

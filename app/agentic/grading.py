@@ -1,5 +1,7 @@
 """CRAG: grade retrieved-chunk relevance; fall back to web search when it's poor."""
 
+import asyncio
+
 import httpx
 
 from app.rag.retrieval import RetrievedChunk
@@ -36,7 +38,12 @@ async def crag_correct(llm, web_search_fn, query: str, chunks: list[RetrievedChu
     if not chunks:
         avg_score = 0.0
     else:
-        scores = [grade_relevance(llm, query, c.content) for c in chunks]
+        # grade_relevance is a blocking LLM call; running it inline here would
+        # block the event loop for the whole batch since this function is
+        # awaited directly from the async get_rag_context MCP handler.
+        scores = await asyncio.to_thread(
+            lambda: [grade_relevance(llm, query, c.content) for c in chunks]
+        )
         avg_score = sum(scores) / len(scores)
 
     if avg_score >= CRAG_RELEVANCE_THRESHOLD:

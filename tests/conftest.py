@@ -89,6 +89,18 @@ class FakeGraphStore(GraphStore):
     def list_code_symbols(self, user_id: str) -> list[dict]:
         return [s for s in self.symbols.values() if s["user_id"] == user_id]
 
+    def delete_text_entities_by_source_doc(self, user_id: str, source_doc_id: str) -> None:
+        remove_ids = {
+            eid for eid, e in self.text_entities.items()
+            if e["user_id"] == user_id and e.get("source_doc_id") == source_doc_id
+        }
+        for eid in remove_ids:
+            del self.text_entities[eid]
+        self.related_edges = [
+            e for e in self.related_edges if e["source"] not in remove_ids and e["target"] not in remove_ids
+        ]
+        self.mentions_edges = [e for e in self.mentions_edges if e["source"] not in remove_ids]
+
 
 @pytest.fixture
 def graph_store() -> FakeGraphStore:

@@ -1,5 +1,6 @@
 """MCP tool surface exposed to hoton-lmr (and any other MCP client)."""
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 
@@ -144,25 +145,34 @@ MEMORY_MIN_SIMILARITY = 0.6
 
 
 async def get_rag_context_impl(ctx: ToolContext, user_id: str, query: str) -> RagContextResult:
+    # This handler is `async def`, so anything called directly (not via
+    # asyncio.to_thread) blocks the single event loop for its full duration —
+    # LLM inference and Qdrant network search are neither. Offloading each
+    # blocking step to a thread lets concurrent requests interleave instead of
+    # fully serializing behind one caller's multi-step retrieval chain.
     uid = uuid.UUID(user_id)
-    complexity = classify_query(ctx.llm, query)
+    complexity = await asyncio.to_thread(classify_query, ctx.llm, query)
 
     if complexity == QueryComplexity.DIRECT:
         return RagContextResult(context_text="", chunks_used=0, memories_used=0, chunks=[])
 
     if complexity == QueryComplexity.MULTI:
-        chunks, memories = run_multi_step_retrieval(
-            ctx.client, ctx.embedder, ctx.llm, uid, query, RAG_TOP_K, RAG_MIN_SIMILARITY
+        chunks, memories = await asyncio.to_thread(
+            run_multi_step_retrieval, ctx.client, ctx.embedder, ctx.llm, uid, query, RAG_TOP_K, RAG_MIN_SIMILARITY
         )
         chunks = await crag_correct(ctx.llm, ctx.web_search_fn, query, chunks)
     else:  # SINGLE
-        hyde_query = generate_hypothetical_answer(ctx.llm, query)
-        chunks = retrieve_chunks(ctx.client, ctx.embedder, uid, hyde_query, RAG_TOP_K, RAG_MIN_SIMILARITY)
+        hyde_query = await asyncio.to_thread(generate_hypothetical_answer, ctx.llm, query)
+        chunks = await asyncio.to_thread(
+            retrieve_chunks, ctx.client, ctx.embedder, uid, hyde_query, RAG_TOP_K, RAG_MIN_SIMILARITY
+        )
         chunks = await crag_correct(ctx.llm, ctx.web_search_fn, query, chunks)
-        memories = retrieve_memories(ctx.client, ctx.embedder, uid, query, MEMORY_TOP_K, MEMORY_MIN_SIMILARITY)
+        memories = await asyncio.to_thread(
+            retrieve_memories, ctx.client, ctx.embedder, uid, query, MEMORY_TOP_K, MEMORY_MIN_SIMILARITY
+        )
 
     apply_self_consistency(memories, query)
-    profile = get_or_create_profile(ctx.client, uid)
+    profile = await asyncio.to_thread(get_or_create_profile, ctx.client, uid)
     context_text = build_full_context(chunks, memories, profile)
     return RagContextResult(
         context_text=context_text,

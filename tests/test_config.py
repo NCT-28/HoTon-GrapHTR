@@ -29,7 +29,7 @@ def test_settings_dashboard_and_usage_db_defaults(monkeypatch):
     settings = Settings()
     assert settings.usage_db_url == ""
     assert settings.dashboard_user == ""
-    assert settings.dashboard_password == ""
+    assert settings.dashboard_password.get_secret_value() == ""
 
 
 def test_settings_reads_dashboard_and_usage_db_env(monkeypatch):
@@ -39,7 +39,7 @@ def test_settings_reads_dashboard_and_usage_db_env(monkeypatch):
     settings = Settings()
     assert settings.usage_db_url == "postgresql://lmr:changeme@postgres:5432/hoton_rag"
     assert settings.dashboard_user == "admin"
-    assert settings.dashboard_password == "secret"
+    assert settings.dashboard_password.get_secret_value() == "secret"
 
 
 def test_settings_usage_db_component_defaults(monkeypatch):
@@ -49,7 +49,7 @@ def test_settings_usage_db_component_defaults(monkeypatch):
     assert settings.usage_db_host == ""
     assert settings.usage_db_port == 5432
     assert settings.usage_db_user == ""
-    assert settings.usage_db_password == ""
+    assert settings.usage_db_password.get_secret_value() == ""
     assert settings.usage_db_name == "hoton_rag"
 
 
@@ -63,5 +63,5 @@ def test_settings_reads_usage_db_component_env(monkeypatch):
     assert settings.usage_db_host == "postgres"
     assert settings.usage_db_port == 5433
     assert settings.usage_db_user == "lmr"
-    assert settings.usage_db_password == "we!rd@pass"
+    assert settings.usage_db_password.get_secret_value() == "we!rd@pass"
     assert settings.usage_db_name == "hoton_rag_custom"

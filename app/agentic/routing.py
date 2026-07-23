@@ -21,7 +21,19 @@ Classification:"""
 
 def classify_query(llm, query: str) -> QueryComplexity:
     raw = llm.generate(_ROUTING_PROMPT.format(query=query), max_new_tokens=10, temperature=0.0).strip().lower()
+
+    # Exact first-word match first, since the prompt asks for exactly one word
+    # and this can't be fooled by a longer explanation containing "direct" as
+    # a substring (e.g. "not a direct lookup, needs multi-step reasoning").
+    first_word = raw.split()[0].strip(".,!?\"'") if raw.split() else ""
     for complexity in QueryComplexity:
-        if complexity.value in raw:
+        if complexity.value == first_word:
             return complexity
+
+    # Fall back to substring match, preferring the longest/most-specific label
+    # so "multi" wins over "direct" when both appear in a rambling response.
+    matches = [c for c in QueryComplexity if c.value in raw]
+    if matches:
+        return max(matches, key=lambda c: len(c.value))
+
     return QueryComplexity.SINGLE  # unparsable output fails safe to "still retrieve", never silently skips RAG

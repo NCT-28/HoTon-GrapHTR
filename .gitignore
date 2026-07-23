@@ -33,3 +33,5 @@ htmlcov/
 repos/
 graphtr-out/*.json
 graphtr-out/*.html
+docker/code-repos/
+docker/models/

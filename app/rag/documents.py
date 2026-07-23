@@ -1,6 +1,7 @@
 """Document ingest — ported from hoton-lmr/src/rag/documents.rs (upload/extract/chunk/embed/store)."""
 
 import ipaddress
+import socket
 import uuid
 from urllib.parse import urlparse
 
@@ -43,16 +44,16 @@ def process_uploaded_file(
 ) -> tuple[str, str]:
     name = file_name or "unknown"
     title = name.split(".")[0]
+    name_lower = name.lower()
+    content_type = (content_type or "").lower()
 
-    is_markdown = (content_type and content_type.startswith(("text/markdown", "text/plain"))) or name.endswith(
-        ".md"
-    )
-    if is_markdown:
-        text = extract_text_from_markdown(data.decode("utf-8", errors="replace"))
-    elif name.endswith(".txt"):
-        text = data.decode("utf-8", errors="replace")
-    elif name.endswith(".pdf"):
+    is_pdf = content_type.startswith("application/pdf") or name_lower.endswith(".pdf")
+    is_markdown = content_type.startswith(("text/markdown", "text/plain")) or name_lower.endswith(".md")
+
+    if is_pdf:
         text = _extract_pdf_text(data)
+    elif is_markdown:
+        text = extract_text_from_markdown(data.decode("utf-8", errors="replace"))
     else:
         text = data.decode("utf-8", errors="replace")
 
@@ -68,8 +69,33 @@ def _extract_pdf_text(data: bytes) -> str:
     return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 
+_NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    # NAT64/DNS64 resolvers (common on IPv6-only or dual-stack Docker networks)
+    # synthesize an IPv6 address embedding the real IPv4 in its low 32 bits —
+    # unwrap it and check the embedded address instead of the wrapper, which
+    # Python's ipaddress module otherwise flags as "reserved" even for a
+    # perfectly public IPv4 target (a false positive), while an attacker could
+    # also abuse the same synthesis to smuggle a blocked IPv4 through unwrapped.
+    if isinstance(ip, ipaddress.IPv6Address) and ip in _NAT64_PREFIX:
+        return _is_blocked_ip(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF))
+    # Deliberately not checking is_reserved: that flag covers broad IETF
+    # "reserved for future use" ranges (including 64:ff9b::/96 itself) that
+    # aren't actually private or unreachable — using it produces false
+    # positives on legitimately routable public addresses.
+    return ip.is_loopback or ip.is_unspecified or ip.is_link_local or ip.is_private
+
+
 def is_safe_url(raw: str) -> bool:
-    """Returns False for URLs targeting loopback, private, or cloud-metadata addresses."""
+    """Returns False for URLs targeting loopback, private, or cloud-metadata addresses.
+
+    Resolves hostnames and checks every returned address, not just the literal
+    host string — otherwise an attacker-controlled domain that resolves to a
+    blocked address (e.g. 169.254.169.254) at request time bypasses this check,
+    since the fetch that follows re-resolves DNS independently (DNS rebinding).
+    """
     try:
         parsed = urlparse(raw)
     except ValueError:
@@ -85,10 +111,23 @@ def is_safe_url(raw: str) -> bool:
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
-        return True  # not an IP literal — hostname, allowed
+        ip = None  # not an IP literal — hostname, must resolve and check below
 
-    if ip.is_loopback or ip.is_unspecified or ip.is_link_local or ip.is_private or ip.is_reserved:
-        return False
+    if ip is not None:
+        return not _is_blocked_ip(ip)
+
+    try:
+        addrinfo = socket.getaddrinfo(host, None)
+    except OSError:
+        return False  # unresolvable — can't verify safety, fail closed
+
+    for *_rest, sockaddr in addrinfo:
+        try:
+            resolved_ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return False
+        if _is_blocked_ip(resolved_ip):
+            return False
 
     return True
 
@@ -229,6 +268,8 @@ def build_documents_router(get_client, get_embedder, get_graph_store=None, get_l
                 collection_name=RAG_CHUNKS,
                 points_selector=Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]),
             )
+            if get_graph_store is not None:
+                get_graph_store().delete_text_entities_by_source_doc(x_user_id, document_id)
             return None
 
     return router

@@ -69,6 +69,9 @@ class GraphStore(ABC):
     @abstractmethod
     def list_code_symbols(self, user_id: str) -> list[dict]: ...
 
+    @abstractmethod
+    def delete_text_entities_by_source_doc(self, user_id: str, source_doc_id: str) -> None: ...
+
 
 class Neo4jGraphStore(GraphStore):
     def __init__(self, driver):
@@ -115,14 +118,18 @@ class Neo4jGraphStore(GraphStore):
             )
 
     def delete_repo(self, user_id: str, repo_id: str) -> None:
-        self._driver.execute_query(
-            "MATCH (n:CodeSymbol {user_id: $user_id, repo_id: $repo_id}) DETACH DELETE n",
-            user_id=user_id, repo_id=repo_id,
-        )
-        self._driver.execute_query(
-            "MATCH (r:Repo {user_id: $user_id, repo_id: $repo_id}) DETACH DELETE r",
-            user_id=user_id, repo_id=repo_id,
-        )
+        def _work(tx):
+            tx.run(
+                "MATCH (n:CodeSymbol {user_id: $user_id, repo_id: $repo_id}) DETACH DELETE n",
+                user_id=user_id, repo_id=repo_id,
+            )
+            tx.run(
+                "MATCH (r:Repo {user_id: $user_id, repo_id: $repo_id}) DETACH DELETE r",
+                user_id=user_id, repo_id=repo_id,
+            )
+
+        with self._driver.session() as session:
+            session.execute_write(_work)
 
     def replace_repo_graph(self, repo: dict, symbols: list[dict], edges: list[dict]) -> None:
         user_id, repo_id = repo["user_id"], repo["repo_id"]
@@ -189,24 +196,40 @@ class Neo4jGraphStore(GraphStore):
         """CodeSymbol nodes/edges for this repo, plus any TextEntity that
         MENTIONS one of those symbols — the unified-graph query surface, not
         just the code-only slice."""
-        records, _, _ = self._driver.execute_query(
+        # Two separate queries, not one query with two chained OPTIONAL MATCHes:
+        # independent optional matches in a single Cypher query cross-join per
+        # row, so a symbol with both outgoing code edges and an incoming
+        # MENTIONS would otherwise have each (r,m) pair duplicated once per
+        # `te` match and vice versa.
+        code_records, _, _ = self._driver.execute_query(
             """
             MATCH (n:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
             OPTIONAL MATCH (n)-[r]->(m:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
-            OPTIONAL MATCH (te:TextEntity {user_id: $user_id})-[:MENTIONS]->(n)
-            RETURN n, r, m, te
+            RETURN n, r, m
             """,
             user_id=user_id, repo_id=repo_id,
         )
+        mention_records, _, _ = self._driver.execute_query(
+            """
+            MATCH (n:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
+            OPTIONAL MATCH (te:TextEntity {user_id: $user_id})-[:MENTIONS]->(n)
+            RETURN n, te
+            """,
+            user_id=user_id, repo_id=repo_id,
+        )
+
         nodes_by_id: dict[str, dict] = {}
         edges: list[dict] = []
-        for record in records:
+        for record in code_records:
             n = dict(record["n"])
             nodes_by_id[n["id"]] = n
             if record["r"] is not None:
                 m = dict(record["m"])
                 nodes_by_id[m["id"]] = m
                 edges.append({"source": n["id"], "target": m["id"], "type": record["r"].type})
+        for record in mention_records:
+            n = dict(record["n"])
+            nodes_by_id[n["id"]] = n
             if record["te"] is not None:
                 te = dict(record["te"])
                 nodes_by_id[te["id"]] = te
@@ -266,9 +289,17 @@ class Neo4jGraphStore(GraphStore):
         )
         return [dict(r["n"]) for r in records]
 
+    def delete_text_entities_by_source_doc(self, user_id: str, source_doc_id: str) -> None:
+        self._driver.execute_query(
+            "MATCH (e:TextEntity {user_id: $user_id, source_doc_id: $source_doc_id}) DETACH DELETE e",
+            user_id=user_id, source_doc_id=source_doc_id,
+        )
+
 
 @lru_cache
 def get_graph_store() -> GraphStore:
     settings = get_settings()
-    driver = GraphDatabase.driver(settings.neo4j_url, auth=(settings.neo4j_user, settings.neo4j_password))
+    driver = GraphDatabase.driver(
+        settings.neo4j_url, auth=(settings.neo4j_user, settings.neo4j_password.get_secret_value())
+    )
     return Neo4jGraphStore(driver)

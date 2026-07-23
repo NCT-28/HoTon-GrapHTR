@@ -66,13 +66,22 @@ def extract_and_store_entities(graph_store, llm, user_id: str, source_doc_id: st
     if not entities:
         return 0
 
-    name_to_id = {e.name: e.id for e in entities}
+    # Map each name to *all* matching entity ids (not just the last one seen) —
+    # the LLM can extract two distinct entities sharing a name, and collapsing
+    # them into a single id would silently mislink relationship edges.
+    name_to_ids: dict[str, list[str]] = {}
+    for e in entities:
+        name_to_ids.setdefault(e.name, []).append(e.id)
+
     graph_store.upsert_text_entities([
         {"id": e.id, "user_id": user_id, "name": e.name, "entity_type": e.entity_type,
          "source_doc_id": source_doc_id, "source_memory_id": None}
         for e in entities
     ])
     graph_store.upsert_related_edges([
-        {"source": name_to_id[r.source_name], "target": name_to_id[r.target_name]} for r in relationships
+        {"source": source_id, "target": target_id}
+        for r in relationships
+        for source_id in name_to_ids[r.source_name]
+        for target_id in name_to_ids[r.target_name]
     ])
     return len(entities)

@@ -58,6 +58,8 @@ def create_app(
         async with mcp.session_manager.run():
             yield
         cleanup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await cleanup_task
         resolved_watcher_manager.stop()
 
     app = FastAPI(title="hoton-graphtr", lifespan=lifespan)

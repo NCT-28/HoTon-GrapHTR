@@ -40,6 +40,12 @@ class _RepoChangeHandler(FileSystemEventHandler):
     on_deleted = _schedule
     on_moved = _schedule
 
+    def cancel(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+
 
 class RepoWatcherManager:
     def __init__(
@@ -50,9 +56,17 @@ class RepoWatcherManager:
         self._debounce_seconds = debounce_seconds
         self._qdrant_client = qdrant_client
         self._embedder = embedder
-        self._observer = Observer()
-        self._observer.start()
-        self._watches: dict[tuple[str, str], object] = {}
+        self._observer: Observer | None = None
+        self._watches: dict[tuple[str, str], tuple[object, _RepoChangeHandler]] = {}
+
+    def _ensure_observer(self) -> Observer:
+        # Started lazily on first watch() rather than in __init__ so a manager
+        # that's constructed but never used to watch a repo (e.g. built up
+        # front, watched conditionally) doesn't leak an OS thread.
+        if self._observer is None:
+            self._observer = Observer()
+            self._observer.start()
+        return self._observer
 
     def reindex(self, user_id: str, repo_id: str, local_path: str) -> None:
         symbols, edges = parse_repo(local_path)
@@ -90,13 +104,16 @@ class RepoWatcherManager:
         if key in self._watches:
             return
         handler = _RepoChangeHandler(lambda: self.reindex(user_id, repo_id, local_path), self._debounce_seconds)
-        watch = self._observer.schedule(handler, local_path, recursive=True)
-        self._watches[key] = watch
+        watch = self._ensure_observer().schedule(handler, local_path, recursive=True)
+        self._watches[key] = (watch, handler)
 
     def unwatch(self, user_id: str, repo_id: str) -> None:
-        watch = self._watches.pop((user_id, repo_id), None)
-        if watch is not None:
-            self._observer.unschedule(watch)
+        entry = self._watches.pop((user_id, repo_id), None)
+        if entry is not None:
+            watch, handler = entry
+            handler.cancel()  # drop any debounce timer already scheduled, or it'd still fire after unwatch
+            if self._observer is not None:
+                self._observer.unschedule(watch)
 
     def watched_repos(self) -> set[tuple[str, str]]:
         return set(self._watches.keys())
@@ -107,5 +124,7 @@ class RepoWatcherManager:
                 self.watch(repo["user_id"], repo["repo_id"], repo["local_path"])
 
     def stop(self) -> None:
-        self._observer.stop()
-        self._observer.join()
+        if self._observer is not None:
+            self._observer.stop()
+            self._observer.join()
+            self._observer = None
