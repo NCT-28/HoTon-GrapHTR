@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Uploads graphtr-out/knowledge/*.md into hoton-graphtr's document RAG under a
 dedicated project rag_user_id (minted into manifest.json on first run).
-Full-regenerate: deletes any existing doc with the same title before
-re-uploading. Run via: python3 scripts/index_knowledge.py
+Deletes any existing doc with the same title before re-uploading.
+
+Run via: python3 scripts/index_knowledge.py [topic ...]
+
+With no args, indexes all 7 topics. With topic names given (e.g. `stack
+conventions`), only those are (re)uploaded -- useful for a `refresh` where
+only one or two narrative docs changed and the other ~2-2.5min/doc uploads
+would be wasted work.
 
 Note: hoton-graphtr's /api/documents upload derives `title` from the uploaded
 filename's stem (see app/rag/documents.py::process_uploaded_file), not from
@@ -105,12 +111,22 @@ def chunk_count_for(base_url: str, rag_user_id: str, document_id: str) -> int:
 
 
 def main() -> None:
+    requested = sys.argv[1:]
+    if requested:
+        unknown = [t for t in requested if t not in TOPICS]
+        if unknown:
+            print(f"FAIL: unknown topic(s) {unknown} -- valid topics: {TOPICS}")
+            sys.exit(1)
+        topics = requested
+    else:
+        topics = TOPICS
+
     base_url = os.environ.get("RAG_SERVICE_URL", "http://localhost:8030")
     manifest = json.loads(MANIFEST_PATH.read_text())
     rag_user_id = get_or_mint_rag_user_id(manifest)
 
     results = []
-    for topic in TOPICS:
+    for topic in topics:
         path = KNOWLEDGE_DIR / f"{topic}.md"
         if not path.exists():
             print(f"FAIL: {path} does not exist -- run build_knowledge_skeleton.py + fill narrative first")

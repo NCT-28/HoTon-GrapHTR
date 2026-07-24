@@ -15,6 +15,19 @@ To set up this same graphtr + graphtr-knowledge workflow in a **different** proj
 `python3 scripts/init_graphtr_skills.py <target-project-path>` from this repo — it
 copies both skills (and the generic pipeline scripts they need) into the target.
 
+## Args
+
+`/graphtr <init|update|refresh>` (or a plain query with no arg — see Fast path below).
+No arg + no `graphtr-out/graph.json` → treat as `init`. "rebuild"/"lost the watcher" phrasing →
+`update`. "code changed"/"stale" phrasing → `refresh`.
+
+| Arg | Runs | Use when |
+|---|---|---|
+| `init` | Bootstrap section | `graphtr-out/graph.json` doesn't exist yet — first-time build |
+| `update` | Bootstrap section, with a **fresh** `ingest_codebase` call | the existing `repo_id`/watcher was lost entirely (container restarted without persistent state) — an intentional full rebuild, not a routine op. Afterward, check Neo4j for leftover duplicate `repo_id`s per the Refresh section's last paragraph and delete them |
+| `refresh` | Refresh section | code changed since last ingest and the watcher/`repo_id` are still alive — reuse the existing `repo_id`, re-export only, no new ingest |
+| *(no arg, graph exists)* | Fast path | answering a codebase question — query `graph.json` directly, don't rebuild anything |
+
 ## Fast path — graph already exists
 
 If `graphtr-out/graph.json` exists and the question is about codebase structure or relationships

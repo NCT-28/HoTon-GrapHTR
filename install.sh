@@ -167,32 +167,41 @@ if [ "$ORIGINAL_PWD" != "$REPO_ROOT" ]; then
 fi
 
 if [ "$RUN_AFTER" -eq 1 ]; then
-  # A leftover server from a previous run holds the local Qdrant storage
-  # lock (./graphtr-out/qdrant), so a fresh start fails with
-  # portalocker.AlreadyLocked. Stop anything already bound to :8030 first.
-  if command -v lsof >/dev/null 2>&1; then
-    EXISTING_PIDS=$(lsof -ti tcp:8030 2>/dev/null || true)
-    if [ -n "$EXISTING_PIDS" ]; then
-      echo ""
-      echo "Stopping existing process(es) on :8030: $EXISTING_PIDS"
-      kill $EXISTING_PIDS 2>/dev/null || true
-      sleep 1
-      STILL_RUNNING=$(lsof -ti tcp:8030 2>/dev/null || true)
-      if [ -n "$STILL_RUNNING" ]; then
-        kill -9 $STILL_RUNNING 2>/dev/null || true
+  # The server is shared across every project that installs into ~/.graphtr --
+  # re-running install.sh (e.g. curl-piped for a 2nd/3rd repo) must not kill
+  # a healthy server out from under projects already using it. Only restart
+  # when :8030 is unresponsive or unbound.
+  if curl -fsS -o /dev/null --max-time 2 "http://localhost:8030/health" 2>/dev/null; then
+    echo ""
+    echo "Server already running and healthy on :8030 -- not restarting."
+  else
+    # A leftover server from a previous run holds the local Qdrant storage
+    # lock (./graphtr-out/qdrant), so a fresh start fails with
+    # portalocker.AlreadyLocked. Stop anything already bound to :8030 first.
+    if command -v lsof >/dev/null 2>&1; then
+      EXISTING_PIDS=$(lsof -ti tcp:8030 2>/dev/null || true)
+      if [ -n "$EXISTING_PIDS" ]; then
+        echo ""
+        echo "Stopping unresponsive process(es) on :8030: $EXISTING_PIDS"
+        kill $EXISTING_PIDS 2>/dev/null || true
+        sleep 1
+        STILL_RUNNING=$(lsof -ti tcp:8030 2>/dev/null || true)
+        if [ -n "$STILL_RUNNING" ]; then
+          kill -9 $STILL_RUNNING 2>/dev/null || true
+        fi
       fi
     fi
-  fi
 
-  LOG_FILE="$REPO_ROOT/graphtr-server.log"
-  echo ""
-  echo "Starting server on :8030 (detached -- survives Ctrl+C / shell exit)..."
-  nohup uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030 \
-    >"$LOG_FILE" 2>&1 </dev/null &
-  SERVER_PID=$!
-  disown
-  echo "Server started (pid $SERVER_PID). Logs: $LOG_FILE"
-  echo "Stop with: kill $SERVER_PID"
+    LOG_FILE="$REPO_ROOT/graphtr-server.log"
+    echo ""
+    echo "Starting server on :8030 (detached -- survives Ctrl+C / shell exit)..."
+    nohup uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030 \
+      >"$LOG_FILE" 2>&1 </dev/null &
+    SERVER_PID=$!
+    disown
+    echo "Server started (pid $SERVER_PID). Logs: $LOG_FILE"
+    echo "Stop with: kill $SERVER_PID"
+  fi
 else
   echo ""
   echo "Run:"
