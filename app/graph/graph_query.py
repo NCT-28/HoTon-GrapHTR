@@ -90,3 +90,32 @@ def explain_node(nodes: list[dict], edges: list[dict], name: str) -> tuple[dict,
         if u == node_id or v == node_id
     ]
     return g.nodes[node_id], [g.nodes[n] for n in neighbor_ids], related_edges
+
+
+def fuse_graph_context(
+    graph_store, user_id: str, repo_id: str, keywords: list[str], max_nodes: int = 15
+) -> tuple[list[dict], list[dict]]:
+    """Depth-1 BFS per keyword against the repo's subgraph, merged and deduped
+    by node id, capped at `max_nodes` (earlier keywords kept preferentially).
+    Empty `keywords` (nothing relevant found upstream) short-circuits to
+    ([], []) without touching the graph store."""
+    if not keywords:
+        return [], []
+
+    nodes, edges = graph_store.get_subgraph(user_id, repo_id)
+    seen_ids: set[str] = set()
+    merged_nodes: list[dict] = []
+
+    for kw in keywords:
+        kw_nodes, _kw_edges = bfs_query(nodes, edges, kw, depth=1)
+        for n in kw_nodes:
+            if n["id"] not in seen_ids:
+                seen_ids.add(n["id"])
+                merged_nodes.append(n)
+        if len(merged_nodes) >= max_nodes:
+            break
+
+    merged_nodes = merged_nodes[:max_nodes]
+    kept_ids = {n["id"] for n in merged_nodes}
+    merged_edges = [e for e in edges if e["source"] in kept_ids and e["target"] in kept_ids]
+    return merged_nodes, merged_edges

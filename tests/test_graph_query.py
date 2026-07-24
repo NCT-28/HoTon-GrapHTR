@@ -1,4 +1,4 @@
-from app.graph.graph_query import bfs_query, explain_node, shortest_path
+from app.graph.graph_query import bfs_query, explain_node, fuse_graph_context, shortest_path
 
 NODES = [
     {"id": "1", "name": "Animal", "kind": "class"},
@@ -57,3 +57,37 @@ def test_explain_node_returns_node_and_direct_neighbors():
 
 def test_explain_node_returns_none_for_unknown_name():
     assert explain_node(NODES, EDGES, name="nope") is None
+
+
+class _FakeGraphStore:
+    def __init__(self, nodes, edges):
+        self._nodes = nodes
+        self._edges = edges
+
+    def get_subgraph(self, user_id, repo_id):
+        return self._nodes, self._edges
+
+
+def test_fuse_graph_context_merges_multiple_keywords_dedup():
+    store = _FakeGraphStore(NODES, EDGES)
+    nodes, edges = fuse_graph_context(store, "u1", "r1", ["dog", "bark"], max_nodes=15)
+    names = {n["name"] for n in nodes}
+    assert names == {"Dog", "Animal", "bark", "helper"}
+
+
+def test_fuse_graph_context_respects_max_nodes_cap():
+    store = _FakeGraphStore(NODES, EDGES)
+    nodes, _edges = fuse_graph_context(store, "u1", "r1", ["dog"], max_nodes=1)
+    assert len(nodes) == 1
+
+
+def test_fuse_graph_context_empty_keywords_returns_empty():
+    store = _FakeGraphStore(NODES, EDGES)
+    assert fuse_graph_context(store, "u1", "r1", []) == ([], [])
+
+
+def test_fuse_graph_context_filters_edges_to_kept_nodes():
+    store = _FakeGraphStore(NODES, EDGES)
+    nodes, edges = fuse_graph_context(store, "u1", "r1", ["dog"], max_nodes=15)
+    kept_ids = {n["id"] for n in nodes}
+    assert all(e["source"] in kept_ids and e["target"] in kept_ids for e in edges)
