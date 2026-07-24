@@ -1,4 +1,4 @@
-"""MCP tool surface exposed to hoton-lmr (and any other MCP client)."""
+"""MCP tool surface exposed to MCP clients."""
 
 import asyncio
 import uuid
@@ -10,6 +10,7 @@ from qdrant_client import QdrantClient
 
 from app.rag.context import apply_self_consistency, build_full_context
 from app.agentic.grading import crag_correct
+from app.agentic.graph_fusion import extract_graph_keywords
 from app.agentic.hyde import generate_hypothetical_answer
 from app.rag.memory import extract_and_store_memories, retrieve_memories
 from app.rag.profile import get_or_create_profile, update_profile_from_message
@@ -17,7 +18,7 @@ from app.agentic.react import run_multi_step_retrieval
 from app.rag.retrieval import retrieve_chunks
 from app.agentic.routing import QueryComplexity, classify_query
 from app.graph.code_graph_store import GraphStore
-from app.graph.graph_query import bfs_query, explain_node, shortest_path
+from app.graph.graph_query import bfs_query, explain_node, fuse_graph_context, shortest_path
 from app.graph.repo_source import resolve_repo_source
 from app.graph.repo_watcher import RepoWatcherManager
 from app.dashboard.tracker import track_usage
@@ -59,8 +60,8 @@ class RagContextResult(BaseModel):
     context_text: str
     chunks_used: int
     memories_used: int
-    # Individual chunks (not just the merged text) — hoton-lmr's Phase 5 citation
-    # feature ("rag_sources" SSE event + per-turn chunk-id logging) needs
+    # Individual chunks (not just the merged text) — downstream citation features
+    # (e.g. a "rag_sources" SSE event + per-turn chunk-id logging) need
     # document_title/source_url/similarity/id per chunk, not a pre-joined string.
     chunks: list[ChunkOut]
 
@@ -144,7 +145,9 @@ MEMORY_TOP_K = 5
 MEMORY_MIN_SIMILARITY = 0.6
 
 
-async def get_rag_context_impl(ctx: ToolContext, user_id: str, query: str) -> RagContextResult:
+async def get_rag_context_impl(
+    ctx: ToolContext, user_id: str, query: str, repo_id: str | None = None
+) -> RagContextResult:
     # This handler is `async def`, so anything called directly (not via
     # asyncio.to_thread) blocks the single event loop for its full duration —
     # LLM inference and Qdrant network search are neither. Offloading each
@@ -173,7 +176,15 @@ async def get_rag_context_impl(ctx: ToolContext, user_id: str, query: str) -> Ra
 
     apply_self_consistency(memories, query)
     profile = await asyncio.to_thread(get_or_create_profile, ctx.client, uid)
-    context_text = build_full_context(chunks, memories, profile)
+
+    graph_nodes: list[dict] = []
+    graph_edges: list[dict] = []
+    if repo_id and ctx.graph_store:
+        keywords = await asyncio.to_thread(extract_graph_keywords, ctx.llm, query)
+        if keywords:
+            graph_nodes, graph_edges = fuse_graph_context(ctx.graph_store, user_id, repo_id, keywords)
+
+    context_text = build_full_context(chunks, memories, profile, graph_nodes, graph_edges)
     return RagContextResult(
         context_text=context_text,
         chunks_used=len(chunks),
@@ -270,10 +281,11 @@ def build_mcp_server(ctx: ToolContext) -> FastMCP:
     mcp = FastMCP("hoton-graphtr", stateless_http=True, json_response=True)
 
     @mcp.tool()
-    async def get_rag_context(user_id: str, query: str) -> RagContextResult:
-        """Retrieve merged profile/memory/knowledge context for a chat turn."""
+    async def get_rag_context(user_id: str, query: str, repo_id: str | None = None) -> RagContextResult:
+        """Retrieve merged profile/memory/knowledge context for a chat turn.
+        Pass repo_id to also fuse relevant code-graph context into the result."""
         with track_usage(ctx.usage_store, "get_rag_context", user_id):
-            return await get_rag_context_impl(ctx, user_id, query)
+            return await get_rag_context_impl(ctx, user_id, query, repo_id)
 
     @mcp.tool()
     def retrieve_chunks(user_id: str, query: str, top_k: int = 5, min_similarity: float = 0.0) -> RetrieveChunksResult:
