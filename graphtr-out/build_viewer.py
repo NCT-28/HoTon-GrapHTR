@@ -8,15 +8,18 @@ vis-network's physics engine in the browser — this script only shapes the data
 
 Usage:
   python3 graphtr-out/build_viewer.py
+
+Pass --out-dir <dir> to build a graphtr.html for a graph.json living
+somewhere other than this script's own directory (e.g. a shared copy of this
+script run against a different project's graphtr-out/):
+  python3 build_viewer.py --out-dir /path/to/other/graphtr-out
 """
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 
-OUT_DIR = Path(__file__).parent
-GRAPH_PATH = OUT_DIR / "graph.json"
-MANIFEST_PATH = OUT_DIR / "manifest.json"
-OUTPUT_PATH = OUT_DIR / "graphtr.html"
+DEFAULT_OUT_DIR = Path(__file__).parent
 
 # Tableau10, same palette family as graphify-out/graph.html
 KIND_COLORS = {
@@ -101,8 +104,17 @@ def build_data(nodes: list[dict], edges: list[dict]):
 
 
 def main():
-    graph = json.loads(GRAPH_PATH.read_text())
-    manifest = json.loads(MANIFEST_PATH.read_text()) if MANIFEST_PATH.exists() else {}
+    args = sys.argv[1:]
+    out_dir = DEFAULT_OUT_DIR
+    if len(args) >= 2 and args[0] == "--out-dir":
+        out_dir = Path(args[1])
+
+    graph_path = out_dir / "graph.json"
+    manifest_path = out_dir / "manifest.json"
+    output_path = out_dir / "graphtr.html"
+
+    graph = json.loads(graph_path.read_text())
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     raw_nodes, raw_edges, legend = build_data(graph["nodes"], graph["edges"])
 
     def js_json(obj) -> str:
@@ -116,8 +128,8 @@ def main():
         .replace("__LEGEND__", js_json(legend))
         .replace("__MANIFEST__", js_json(manifest))
     )
-    OUTPUT_PATH.write_text(html)
-    print(f"wrote {OUTPUT_PATH} ({len(raw_nodes)} nodes, {len(raw_edges)} edges)")
+    output_path.write_text(html)
+    print(f"wrote {output_path} ({len(raw_nodes)} nodes, {len(raw_edges)} edges)")
 
 
 TEMPLATE = """<!DOCTYPE html>

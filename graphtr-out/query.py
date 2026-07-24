@@ -10,17 +10,22 @@ Usage:
   python3 rag-out/query.py query worker
   python3 rag-out/query.py path list_files ingest_codebase
   python3 rag-out/query.py explain InferenceRequest
+
+Pass --out-dir <dir> before the mode to query a graph.json living somewhere
+other than this script's own directory (e.g. a shared copy of this script
+run against a different project's graphtr-out/):
+  python3 query.py --out-dir /path/to/other/graphtr-out query worker
 """
 import json
 import sys
 from collections import defaultdict, deque
 from pathlib import Path
 
-GRAPH_PATH = Path(__file__).parent / "graph.json"
+DEFAULT_OUT_DIR = Path(__file__).parent
 
 
-def load_graph():
-    data = json.loads(GRAPH_PATH.read_text())
+def load_graph(out_dir: Path):
+    data = json.loads((out_dir / "graph.json").read_text())
     nodes_by_id = {n["id"]: n for n in data["nodes"]}
     adj = defaultdict(list)  # id -> [(neighbor_id, edge_type, direction)]
     for e in data["edges"]:
@@ -75,8 +80,8 @@ def shortest_path(adj, start_id, goal_id):
     return None
 
 
-def cmd_query(keyword, depth=2):
-    nodes_by_id, adj = load_graph()
+def cmd_query(out_dir, keyword, depth=2):
+    nodes_by_id, adj = load_graph(out_dir)
     matches = find_by_name(nodes_by_id, keyword)
     if not matches:
         print(json.dumps({"nodes": [], "edges": [], "note": f"no symbol matching '{keyword}'"}))
@@ -86,8 +91,8 @@ def cmd_query(keyword, depth=2):
     print(json.dumps({"nodes": sub_nodes, "edges": sub_edges}, indent=2))
 
 
-def cmd_path(from_name, to_name):
-    nodes_by_id, adj = load_graph()
+def cmd_path(out_dir, from_name, to_name):
+    nodes_by_id, adj = load_graph(out_dir)
     starts = find_by_name(nodes_by_id, from_name)
     goals = find_by_name(nodes_by_id, to_name)
     if not starts or not goals:
@@ -106,8 +111,8 @@ def cmd_path(from_name, to_name):
     print(json.dumps({"path": path_nodes}, indent=2))
 
 
-def cmd_explain(name):
-    nodes_by_id, adj = load_graph()
+def cmd_explain(out_dir, name):
+    nodes_by_id, adj = load_graph(out_dir)
     matches = find_by_name(nodes_by_id, name)
     if not matches:
         print(json.dumps({"node": None, "neighbors": [], "note": f"no symbol matching '{name}'"}))
@@ -122,16 +127,22 @@ def cmd_explain(name):
 
 
 def main():
-    if len(sys.argv) < 2:
+    args = sys.argv[1:]
+    out_dir = DEFAULT_OUT_DIR
+    if len(args) >= 2 and args[0] == "--out-dir":
+        out_dir = Path(args[1])
+        args = args[2:]
+
+    if not args:
         print(__doc__)
         sys.exit(1)
-    mode = sys.argv[1]
-    if mode == "query" and len(sys.argv) >= 3:
-        cmd_query(sys.argv[2])
-    elif mode == "path" and len(sys.argv) >= 4:
-        cmd_path(sys.argv[2], sys.argv[3])
-    elif mode == "explain" and len(sys.argv) >= 3:
-        cmd_explain(sys.argv[2])
+    mode = args[0]
+    if mode == "query" and len(args) >= 2:
+        cmd_query(out_dir, args[1])
+    elif mode == "path" and len(args) >= 3:
+        cmd_path(out_dir, args[1], args[2])
+    elif mode == "explain" and len(args) >= 2:
+        cmd_explain(out_dir, args[1])
     else:
         print(__doc__)
         sys.exit(1)
