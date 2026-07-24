@@ -18,6 +18,11 @@
 # Clones the develop branch by default (override with HOTON_GRAPHTR_REPO_BRANCH).
 set -euo pipefail
 
+# Captured before any `cd` -- the directory the script was invoked from, i.e.
+# the consumer project (e.g. curl-piped from inside some other repo). Used
+# below to auto-bootstrap that project's graphtr skills + MCP registration.
+ORIGINAL_PWD="$(pwd)"
+
 REPO_URL="${HOTON_GRAPHTR_REPO_URL:-https://github.com/NCT-28/HoTon-GrapHTR.git}"
 # Zero-service (DEPLOY_MODE=local) code lives on develop and hasn't been
 # merged to main yet -- cloning the default branch gets a Settings class
@@ -122,6 +127,32 @@ fi
 echo ""
 echo "Setup done. .env has DEPLOY_MODE=local."
 echo "Data will be written under \$LOCAL_DATA_DIR (default ./graphtr-out)."
+
+# Auto-bootstrap the calling project: copy the graphtr/graphtr-knowledge
+# skills into it and register the hoton-graphtr MCP server, so `graphtr-out/`
+# can actually be built there. Skipped when running in-place inside this repo
+# itself (ORIGINAL_PWD == REPO_ROOT) since there's no separate consumer
+# project to wire up. Best-effort: failures here must not fail server setup.
+if [ "$ORIGINAL_PWD" != "$REPO_ROOT" ]; then
+  if [ ! -f "$ORIGINAL_PWD/.claude/skills/graphtr/SKILL.md" ]; then
+    echo ""
+    echo "Setting up graphtr skills in $ORIGINAL_PWD..."
+    "$PYTHON_BIN" "$REPO_ROOT/scripts/init_graphtr_skills.py" "$ORIGINAL_PWD" || \
+      echo "Warning: skill setup in $ORIGINAL_PWD failed, continuing." >&2
+  fi
+
+  if command -v claude >/dev/null 2>&1; then
+    if ! (cd "$ORIGINAL_PWD" && claude mcp list 2>/dev/null | grep -q "hoton-graphtr"); then
+      echo "Registering hoton-graphtr MCP server in $ORIGINAL_PWD..."
+      (cd "$ORIGINAL_PWD" && claude mcp add --transport http hoton-graphtr http://localhost:8030/mcp -s local) || \
+        echo "Warning: MCP registration in $ORIGINAL_PWD failed, add manually:" \
+             "claude mcp add --transport http hoton-graphtr http://localhost:8030/mcp -s local" >&2
+    fi
+  else
+    echo "Note: 'claude' CLI not found -- register the MCP server manually:"
+    echo "  cd $ORIGINAL_PWD && claude mcp add --transport http hoton-graphtr http://localhost:8030/mcp -s local"
+  fi
+fi
 
 if [ "$RUN_AFTER" -eq 1 ]; then
   # A leftover server from a previous run holds the local Qdrant storage
