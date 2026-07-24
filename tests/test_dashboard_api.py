@@ -43,7 +43,7 @@ def test_dashboard_accepts_correct_credentials(qdrant, graph_store, usage_store,
     assert "text/html" in resp.headers["content-type"]
 
 
-def test_dashboard_returns_503_when_auth_env_unset(qdrant, graph_store, usage_store, monkeypatch):
+def test_dashboard_serves_unauthenticated_when_auth_env_unset(qdrant, graph_store, usage_store, monkeypatch):
     monkeypatch.delenv("DASHBOARD_USER", raising=False)
     monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
     from app.config import get_settings
@@ -59,8 +59,8 @@ def test_dashboard_returns_503_when_auth_env_unset(qdrant, graph_store, usage_st
     app.include_router(router)
     client = TestClient(app)
 
-    resp = client.get("/dashboard", auth=("anyone", "anything"))
-    assert resp.status_code == 503
+    resp = client.get("/dashboard")
+    assert resp.status_code == 200
 
 
 def test_summary_endpoint_returns_all_six_sections(qdrant, graph_store, usage_store, monkeypatch):
