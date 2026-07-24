@@ -80,3 +80,45 @@ def test_build_full_context_all_empty_returns_empty_string():
     from app.rag.profile import UserProfile
 
     assert build_full_context([], [], UserProfile()) == ""
+
+
+def test_build_graph_context_section_empty_returns_empty_string():
+    from app.rag.context import build_graph_context_section
+
+    assert build_graph_context_section([], []) == ""
+
+
+def test_build_graph_context_section_renders_nodes_and_edges():
+    from app.rag.context import build_graph_context_section
+
+    nodes = [
+        {"id": "1", "name": "retrieve_chunks", "kind": "function", "file_path": "app/rag/retrieval.py", "start_line": 29},
+        {"id": "2", "name": "embed_single", "kind": "method"},
+    ]
+    edges = [{"source": "1", "target": "2", "type": "CALLS"}]
+
+    section = build_graph_context_section(nodes, edges)
+
+    assert "[Code Graph Context]" in section
+    assert "retrieve_chunks (function) — app/rag/retrieval.py:29" in section
+    assert "--CALLS--> embed_single" in section
+
+
+def test_build_full_context_appends_graph_section_after_rag_context():
+    from app.rag.context import build_full_context
+    from app.rag.profile import UserProfile
+
+    chunks = [RetrievedChunk(id="c1", content="Chunk body", document_title="Doc A", source_url=None, similarity=0.9, document_expired=False)]
+    graph_nodes = [{"id": "1", "name": "foo", "kind": "function"}]
+
+    result = build_full_context(chunks, [], UserProfile(), graph_nodes=graph_nodes, graph_edges=[])
+
+    assert "[Code Graph Context]" in result
+    assert result.index("[Knowledge Context]") < result.index("[Code Graph Context]")
+
+
+def test_build_full_context_no_graph_args_unchanged():
+    from app.rag.context import build_full_context
+    from app.rag.profile import UserProfile
+
+    assert build_full_context([], [], UserProfile()) == ""

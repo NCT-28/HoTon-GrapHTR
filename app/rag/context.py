@@ -1,4 +1,4 @@
-"""Context assembly — ported from hoton-lmr/src/rag/context.rs and src/prompts/context.rs."""
+"""Context assembly."""
 
 from app.rag.memory import RetrievedMemory
 from app.rag.retrieval import RetrievedChunk
@@ -83,8 +83,34 @@ def build_profile_context_section(profile: UserProfile) -> str:
     return "\n".join(lines)
 
 
+def build_graph_context_section(graph_nodes: list[dict], graph_edges: list[dict]) -> str:
+    if not graph_nodes:
+        return ""
+
+    name_by_id = {n["id"]: n["name"] for n in graph_nodes}
+    edges_by_source: dict[str, list[dict]] = {}
+    for e in graph_edges:
+        edges_by_source.setdefault(e["source"], []).append(e)
+
+    sections = ["[Code Graph Context]", "─" * 30]
+    for n in graph_nodes:
+        kind = f" ({n['kind']})" if n.get("kind") else ""
+        location = f" — {n['file_path']}:{n['start_line']}" if n.get("file_path") and n.get("start_line") is not None else ""
+        sections.append(f"{n['name']}{kind}{location}")
+        for e in edges_by_source.get(n["id"], []):
+            target_name = name_by_id.get(e["target"], e["target"])
+            sections.append(f"  --{e['type']}--> {target_name}")
+
+    sections.append("─" * 30)
+    return "\n".join(sections)
+
+
 def build_full_context(
-    chunks: list[RetrievedChunk], memories: list[RetrievedMemory], profile: UserProfile
+    chunks: list[RetrievedChunk],
+    memories: list[RetrievedMemory],
+    profile: UserProfile,
+    graph_nodes: list[dict] | None = None,
+    graph_edges: list[dict] | None = None,
 ) -> str:
     parts = []
     profile_section = build_profile_context_section(profile)
@@ -94,4 +120,7 @@ def build_full_context(
         parts.append(build_memory_context_section(memories))
     if chunks:
         parts.append(build_rag_context_section(chunks))
+    graph_section = build_graph_context_section(graph_nodes or [], graph_edges or [])
+    if graph_section:
+        parts.append(graph_section)
     return "\n\n".join(parts)
