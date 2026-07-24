@@ -141,6 +141,18 @@ if [ "$ORIGINAL_PWD" != "$REPO_ROOT" ]; then
       echo "Warning: skill setup in $ORIGINAL_PWD failed, continuing." >&2
   fi
 
+  # If graphtr-out/graph.json already exists (project was ingested before,
+  # e.g. re-running install.sh), (re)build the viewer right away instead of
+  # leaving graphtr.html stale. Fresh projects have no graph.json yet -- that
+  # only shows up after the Bootstrap ingest/export/write steps run inside a
+  # Claude session -- so this is a no-op there.
+  GRAPHTR_OUT_DIR="$ORIGINAL_PWD/graphtr-out"
+  if [ -f "$GRAPHTR_OUT_DIR/graph.json" ]; then
+    echo "Building graphtr viewer for $ORIGINAL_PWD..."
+    "$PYTHON_BIN" "$REPO_ROOT/graphtr-out/build_viewer.py" --out-dir "$GRAPHTR_OUT_DIR" || \
+      echo "Warning: build_viewer.py failed for $GRAPHTR_OUT_DIR" >&2
+  fi
+
   if command -v claude >/dev/null 2>&1; then
     if ! (cd "$ORIGINAL_PWD" && claude mcp list 2>/dev/null | grep -q "hoton-graphtr"); then
       echo "Registering hoton-graphtr MCP server in $ORIGINAL_PWD..."
