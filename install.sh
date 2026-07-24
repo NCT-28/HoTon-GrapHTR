@@ -184,9 +184,15 @@ if [ "$RUN_AFTER" -eq 1 ]; then
     fi
   fi
 
+  LOG_FILE="$REPO_ROOT/graphtr-server.log"
   echo ""
-  echo "Starting server on :8030..."
-  exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
+  echo "Starting server on :8030 (detached -- survives Ctrl+C / shell exit)..."
+  nohup uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030 \
+    >"$LOG_FILE" 2>&1 </dev/null &
+  SERVER_PID=$!
+  disown
+  echo "Server started (pid $SERVER_PID). Logs: $LOG_FILE"
+  echo "Stop with: kill $SERVER_PID"
 else
   echo ""
   echo "Run:"
