@@ -68,12 +68,16 @@ class _RepoChangeHandler(FileSystemEventHandler):
 class RepoWatcherManager:
     def __init__(
         self, graph_store: GraphStore, debounce_seconds: float = _DEFAULT_DEBOUNCE_SECONDS,
-        qdrant_client=None, embedder=None,
+        qdrant_client=None, embedder=None, qdrant_client_resolver=None,
     ):
         self._graph_store = graph_store
         self._debounce_seconds = debounce_seconds
         self._qdrant_client = qdrant_client
         self._embedder = embedder
+        # DEPLOY_MODE=local wires this to open a per-repo embedded Qdrant client keyed by
+        # local_path (see get_repo_qdrant_client), instead of every repo sharing one
+        # collection that grows unbounded. Takes precedence over qdrant_client when set.
+        self._qdrant_client_resolver = qdrant_client_resolver
         self._observer: Observer | None = None
         self._watches: dict[tuple[str, str], tuple[object, _RepoChangeHandler]] = {}
         # One lock per (user_id, repo_id) so concurrent reindex triggers for the
@@ -108,15 +112,16 @@ class RepoWatcherManager:
                 ],
                 [{"source": e.source, "target": e.target, "type": e.type} for e in edges],
             )
-            if self._qdrant_client is not None and self._embedder is not None:
-                self._replace_symbol_embeddings(user_id, repo_id, symbols)
+            client = self._qdrant_client_resolver(local_path) if self._qdrant_client_resolver else self._qdrant_client
+            if client is not None and self._embedder is not None:
+                self._replace_symbol_embeddings(client, user_id, repo_id, symbols)
 
-    def _replace_symbol_embeddings(self, user_id: str, repo_id: str, symbols) -> None:
+    def _replace_symbol_embeddings(self, client, user_id: str, repo_id: str, symbols) -> None:
         # Mirrors replace_repo_graph's atomic-replace semantics: drop this
         # repo's previous vectors before writing the new set, or every reindex
         # (i.e. every debounced file save while watching) would pile up a
         # fresh duplicate copy on top of the last one forever.
-        self._qdrant_client.delete(
+        client.delete(
             collection_name=CODE_SYMBOL_EMBEDDINGS,
             points_selector=Filter(
                 must=[
@@ -128,7 +133,7 @@ class RepoWatcherManager:
         if not symbols:
             return
         vectors = self._embedder.embed_batch([f"{s.kind} {s.name}" for s in symbols])
-        self._qdrant_client.upsert(
+        client.upsert(
             collection_name=CODE_SYMBOL_EMBEDDINGS,
             points=[
                 PointStruct(

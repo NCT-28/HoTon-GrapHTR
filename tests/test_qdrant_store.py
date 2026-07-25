@@ -53,3 +53,37 @@ def test_get_qdrant_client_uses_local_path_in_local_deploy_mode(tmp_path, monkey
 
     get_qdrant_client.cache_clear()
     get_settings.cache_clear()
+
+
+def test_get_repo_qdrant_client_creates_embedded_client_under_repo_graphtr_out(tmp_path):
+    from app.clients.qdrant_store import CODE_SYMBOL_EMBEDDINGS, get_repo_qdrant_client
+
+    repo_path = str(tmp_path / "repo1")
+    client = get_repo_qdrant_client(repo_path)
+
+    names = {c.name for c in client.get_collections().collections}
+    assert CODE_SYMBOL_EMBEDDINGS in names
+    assert (tmp_path / "repo1" / "graphtr-out" / "qdrant").is_dir()
+
+    get_repo_qdrant_client.cache_clear()
+
+
+def test_get_repo_qdrant_client_caches_by_local_path(tmp_path):
+    from app.clients.qdrant_store import get_repo_qdrant_client
+
+    repo_path = str(tmp_path / "repo1")
+
+    assert get_repo_qdrant_client(repo_path) is get_repo_qdrant_client(repo_path)
+
+    get_repo_qdrant_client.cache_clear()
+
+
+def test_get_repo_qdrant_client_returns_distinct_clients_for_different_repos(tmp_path):
+    from app.clients.qdrant_store import get_repo_qdrant_client
+
+    client1 = get_repo_qdrant_client(str(tmp_path / "repo1"))
+    client2 = get_repo_qdrant_client(str(tmp_path / "repo2"))
+
+    assert client1 is not client2
+
+    get_repo_qdrant_client.cache_clear()

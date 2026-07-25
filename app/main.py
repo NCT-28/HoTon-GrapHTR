@@ -15,7 +15,7 @@ from app.clients.llm import get_reasoning_llm
 from app.mcp_server import build_mcp_server, build_tool_context
 from app.rag.memory import build_memory_router
 from app.rag.profile import build_profile_router
-from app.clients.qdrant_store import RAG_DOCUMENTS, USER_MEMORIES, get_qdrant_client
+from app.clients.qdrant_store import RAG_DOCUMENTS, USER_MEMORIES, get_qdrant_client, get_repo_qdrant_client
 from app.graph.repo_watcher import RepoWatcherManager
 from app.dashboard.router import build_dashboard_router
 from app.dashboard.usage_store import get_usage_store
@@ -39,8 +39,16 @@ def create_app(
     )
     resolved_web_search_fn = web_search_fn if web_search_fn is not None else _default_web_search
     resolved_graph_store = graph_store if graph_store is not None else get_graph_store()
+    # Only auto-wire the per-repo resolver when the real default Qdrant client is in play
+    # (an explicitly injected qdrant_client, e.g. a test fake, is used as-is) and we're in
+    # DEPLOY_MODE=local -- server mode's Qdrant is a real shared service, already
+    # multi-tenant via the repo_id payload filter, so it doesn't need per-repo clients.
+    use_repo_resolver = (
+        qdrant_client is None and watcher_manager is None and get_settings().deploy_mode == "local"
+    )
     resolved_watcher_manager = watcher_manager if watcher_manager is not None else RepoWatcherManager(
         resolved_graph_store, qdrant_client=get_client_fn(), embedder=get_embedder_fn(),
+        qdrant_client_resolver=get_repo_qdrant_client if use_repo_resolver else None,
     )
     get_usage_store_fn = (lambda: usage_store) if usage_store is not None else get_usage_store
 

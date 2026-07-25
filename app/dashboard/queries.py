@@ -1,23 +1,47 @@
 """Read-side aggregation for GET /api/dashboard/summary: Qdrant storage sizes,
 Neo4j project breakdown, and usage_events breakdowns by tool/user."""
 
+import os
 from datetime import datetime, timedelta, timezone
 
 from app.clients.qdrant_store import (
     CODE_SYMBOL_EMBEDDINGS, PROFILE_SNAPSHOTS, RAG_CHUNKS, RAG_DOCUMENTS, USER_MEMORIES, USER_PROFILES,
+    get_repo_qdrant_client,
 )
+from app.config import get_settings
 from app.dashboard.tracker import MCP_TOOL_NAMES
 
 _COLLECTIONS = [RAG_DOCUMENTS, RAG_CHUNKS, USER_MEMORIES, USER_PROFILES, PROFILE_SNAPSHOTS, CODE_SYMBOL_EMBEDDINGS]
 
 
-def storage_breakdown(client) -> list[dict]:
+def _code_symbol_embeddings_count_across_repos(graph_store) -> int:
+    total = 0
+    for repo in graph_store.list_repos():
+        local_path = repo.get("local_path")
+        if not local_path or not os.path.isdir(local_path):
+            continue
+        try:
+            total += get_repo_qdrant_client(local_path).count(collection_name=CODE_SYMBOL_EMBEDDINGS).count
+        except Exception:
+            continue
+    return total
+
+
+def storage_breakdown(client, graph_store=None) -> list[dict]:
+    # DEPLOY_MODE=local writes code-symbol vectors into a per-repo embedded Qdrant
+    # (see get_repo_qdrant_client) instead of the shared client, so that one collection
+    # has to be summed across repos rather than counted on `client` like the others.
+    fan_out_code_symbols = graph_store is not None and get_settings().deploy_mode == "local"
+
     result = []
     for name in _COLLECTIONS:
-        try:
-            points = client.count(collection_name=name).count
-        except Exception:
-            points = None
+        if name == CODE_SYMBOL_EMBEDDINGS and fan_out_code_symbols:
+            points = _code_symbol_embeddings_count_across_repos(graph_store)
+        else:
+            try:
+                points = client.count(collection_name=name).count
+            except Exception:
+                points = None
         result.append({"collection": name, "points": points})
 
     total = sum(r["points"] or 0 for r in result)

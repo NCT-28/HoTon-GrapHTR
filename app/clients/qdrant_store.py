@@ -69,3 +69,16 @@ def get_qdrant_client() -> QdrantClient:
         client = QdrantClient(url=settings.qdrant_url)
     bootstrap_collections(client, embed_dim=settings.embed_dim)
     return client
+
+
+@lru_cache
+def get_repo_qdrant_client(local_path: str) -> QdrantClient:
+    """Per-repo embedded Qdrant instance for DEPLOY_MODE=local, so a repo's code-symbol
+    vectors live under <local_path>/graphtr-out/qdrant instead of one collection shared
+    (and growing unbounded) across every locally-ingested repo."""
+    settings = get_settings()
+    repo_data_dir = os.path.join(local_path, "graphtr-out")
+    os.makedirs(repo_data_dir, exist_ok=True)
+    client = QdrantClient(path=os.path.join(repo_data_dir, "qdrant"))
+    bootstrap_collections(client, embed_dim=settings.embed_dim)
+    return client

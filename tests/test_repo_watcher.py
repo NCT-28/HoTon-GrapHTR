@@ -140,6 +140,28 @@ def test_reindex_does_not_touch_another_repos_vectors(tmp_path, graph_store, qdr
     )
 
 
+def test_reindex_uses_qdrant_client_resolver_when_provided(tmp_path, graph_store, qdrant):
+    """DEPLOY_MODE=local wires a resolver that opens a per-repo embedded Qdrant client
+    (keyed by local_path) instead of one shared client -- reindex must call the resolver
+    and write through the client it returns, ignoring the fixed qdrant_client fallback."""
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    resolver_calls = []
+
+    def resolver(local_path):
+        resolver_calls.append(local_path)
+        return qdrant
+
+    manager = RepoWatcherManager(
+        graph_store, qdrant_client=object(), embedder=_FakeEmbedder(),
+        qdrant_client_resolver=resolver,
+    )
+
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+
+    assert resolver_calls == [str(tmp_path)]
+    assert qdrant.count(collection_name=CODE_SYMBOL_EMBEDDINGS).count >= 1
+
+
 def test_concurrent_reindex_calls_for_same_repo_do_not_race(tmp_path, graph_store, qdrant):
     """Two reindex() calls for the same repo landing close together (e.g. two
     debounced fires where the first is still embedding) must serialize, not

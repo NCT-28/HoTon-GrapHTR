@@ -126,9 +126,9 @@ def test_sqlite_replace_repo_graph_rolls_back_entirely_on_invalid_edge_type(sqli
     assert [n["name"] for n in nodes] == ["old_fn"]
 
 
-def test_get_graph_store_returns_sqlite_store_in_local_deploy_mode(tmp_path, monkeypatch):
+def test_get_graph_store_returns_local_multi_repo_store_in_local_deploy_mode(tmp_path, monkeypatch):
     from app.config import get_settings
-    from app.graph.code_graph_store import get_graph_store
+    from app.graph.code_graph_store import LocalMultiRepoGraphStore, get_graph_store
 
     monkeypatch.setenv("DEPLOY_MODE", "local")
     monkeypatch.setenv("LOCAL_DATA_DIR", str(tmp_path))
@@ -137,7 +137,10 @@ def test_get_graph_store_returns_sqlite_store_in_local_deploy_mode(tmp_path, mon
 
     store = get_graph_store()
 
-    assert isinstance(store, SqliteGraphStore)
+    # local mode routes each repo's symbols/edges into its own directory (see
+    # LocalMultiRepoGraphStore) instead of one shared file, so a large/many-repo
+    # local install doesn't grow a single db under local_data_dir without bound.
+    assert isinstance(store, LocalMultiRepoGraphStore)
     assert (tmp_path / "graph.sqlite").exists()
 
     get_graph_store.cache_clear()

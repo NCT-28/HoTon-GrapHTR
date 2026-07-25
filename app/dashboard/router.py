@@ -53,7 +53,7 @@ def build_dashboard_router(get_client, get_graph_store, get_usage_store, get_emb
                 health.check_postgres(usage_store),
                 health.check_embedder(embedder),
             ],
-            "storage": queries.storage_breakdown(client),
+            "storage": queries.storage_breakdown(client, graph_store),
             "mcp_tool_usage": queries.mcp_tool_usage(usage_store),
             "route_usage": queries.route_usage(usage_store),
             "by_project": queries.project_breakdown(graph_store),

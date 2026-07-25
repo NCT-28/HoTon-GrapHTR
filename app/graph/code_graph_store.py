@@ -509,6 +509,30 @@ class SqliteGraphStore(GraphStore):
             self._conn.execute("SELECT 1")
         return True
 
+    def get_mentioning_text_entities(self, symbol_ids: list[str]) -> tuple[list[dict], list[dict]]:
+        """Text-entity nodes and MENTIONS edges targeting any of `symbol_ids`. Used by
+        LocalMultiRepoGraphStore to fuse this (central) store's text entities onto code
+        symbols that live in a separate per-repo store's get_subgraph() result."""
+        if not symbol_ids:
+            return [], []
+        with self._lock:
+            placeholders = _in_clause(len(symbol_ids))
+            mention_rows = self._conn.execute(
+                f"SELECT source, target FROM mentions_edges WHERE target IN {placeholders}", symbol_ids
+            ).fetchall()
+            mention_source_ids = [row["source"] for row in mention_rows]
+            entity_nodes: list[dict] = []
+            if mention_source_ids:
+                te_placeholders = _in_clause(len(mention_source_ids))
+                te_rows = self._conn.execute(
+                    f"SELECT id, user_id, name, entity_type, source_doc_id, source_memory_id "
+                    f"FROM text_entities WHERE id IN {te_placeholders}",
+                    mention_source_ids,
+                ).fetchall()
+                entity_nodes = [dict(row) for row in te_rows]
+        edges = [{"source": row["source"], "target": row["target"], "type": "MENTIONS"} for row in mention_rows]
+        return entity_nodes, edges
+
     def upsert_text_entities(self, entities: list[dict]) -> None:
         if not entities:
             return
@@ -578,12 +602,115 @@ class SqliteGraphStore(GraphStore):
                 self._conn.execute(f"DELETE FROM mentions_edges WHERE source IN {placeholders}", ids)
 
 
+class LocalMultiRepoGraphStore(GraphStore):
+    """DEPLOY_MODE=local GraphStore that keeps each repo's code symbols/edges in its own
+    SqliteGraphStore under <repo local_path>/graphtr-out/graph.sqlite, instead of one file
+    shared by every ingested repo -- so a large/many-repo install doesn't grow a single
+    shared db under settings.local_data_dir without bound.
+
+    A small central SqliteGraphStore (settings.local_data_dir/graph.sqlite) still holds the
+    repo registry (used to route user_id/repo_id -> local_path) plus text entities and
+    MENTIONS edges: those can reference code symbols in any of the user's repos, so they
+    can't be split per-repo without breaking cross-repo entity linking."""
+
+    def __init__(self, central_db_path: str):
+        os.makedirs(os.path.dirname(central_db_path), exist_ok=True)
+        self._central = SqliteGraphStore(central_db_path)
+        self._repo_stores: dict[str, SqliteGraphStore] = {}
+        self._repo_stores_lock = threading.Lock()
+
+    def _repo_store(self, local_path: str) -> SqliteGraphStore:
+        with self._repo_stores_lock:
+            store = self._repo_stores.get(local_path)
+            if store is None:
+                repo_data_dir = os.path.join(local_path, "graphtr-out")
+                os.makedirs(repo_data_dir, exist_ok=True)
+                store = SqliteGraphStore(os.path.join(repo_data_dir, "graph.sqlite"))
+                self._repo_stores[local_path] = store
+            return store
+
+    def _repo_store_for(self, user_id: str, repo_id: str) -> SqliteGraphStore | None:
+        repo = self._central.get_repo(user_id, repo_id)
+        return self._repo_store(repo["local_path"]) if repo is not None else None
+
+    def upsert_repo(self, repo: dict) -> None:
+        self._central.upsert_repo(repo)
+        self._repo_store(repo["local_path"]).upsert_repo(repo)
+
+    def upsert_symbols(self, symbols: list[dict]) -> None:
+        by_repo: dict[tuple[str, str], list[dict]] = {}
+        for s in symbols:
+            by_repo.setdefault((s["user_id"], s["repo_id"]), []).append(s)
+        for (user_id, repo_id), batch in by_repo.items():
+            store = self._repo_store_for(user_id, repo_id)
+            if store is not None:
+                store.upsert_symbols(batch)
+
+    def upsert_code_edges(self, edges: list[dict]) -> None:
+        # code_edges rows carry only symbol ids, no repo_id -- fan out to every known
+        # repo's store; get_subgraph's own source/target-in-this-repo's-symbols filter
+        # keeps only the edges that actually belong to each repo.
+        for repo in self._central.list_repos():
+            self._repo_store(repo["local_path"]).upsert_code_edges(edges)
+
+    def delete_repo(self, user_id: str, repo_id: str) -> None:
+        repo = self._central.get_repo(user_id, repo_id)
+        if repo is not None:
+            self._repo_store(repo["local_path"]).delete_repo(user_id, repo_id)
+        self._central.delete_repo(user_id, repo_id)
+
+    def replace_repo_graph(self, repo: dict, symbols: list[dict], edges: list[dict]) -> None:
+        self._central.upsert_repo(repo)
+        self._repo_store(repo["local_path"]).replace_repo_graph(repo, symbols, edges)
+
+    def get_repo(self, user_id: str, repo_id: str) -> dict | None:
+        return self._central.get_repo(user_id, repo_id)
+
+    def list_repos(self) -> list[dict]:
+        return self._central.list_repos()
+
+    def get_subgraph(self, user_id: str, repo_id: str) -> tuple[list[dict], list[dict]]:
+        repo = self._central.get_repo(user_id, repo_id)
+        if repo is None:
+            return [], []
+        nodes, edges = self._repo_store(repo["local_path"]).get_subgraph(user_id, repo_id)
+        symbol_ids = [n["id"] for n in nodes]
+        entity_nodes, mention_edges = self._central.get_mentioning_text_entities(symbol_ids)
+        return nodes + entity_nodes, edges + mention_edges
+
+    def ping(self) -> bool:
+        return self._central.ping()
+
+    def upsert_text_entities(self, entities: list[dict]) -> None:
+        self._central.upsert_text_entities(entities)
+
+    def upsert_related_edges(self, edges: list[dict]) -> None:
+        self._central.upsert_related_edges(edges)
+
+    def upsert_mentions_edges(self, edges: list[dict]) -> None:
+        self._central.upsert_mentions_edges(edges)
+
+    def list_text_entities(self, user_id: str) -> list[dict]:
+        return self._central.list_text_entities(user_id)
+
+    def list_code_symbols(self, user_id: str) -> list[dict]:
+        symbols: list[dict] = []
+        for repo in self._central.list_repos():
+            if repo["user_id"] != user_id:
+                continue
+            symbols.extend(self._repo_store(repo["local_path"]).list_code_symbols(user_id))
+        return symbols
+
+    def delete_text_entities_by_source_doc(self, user_id: str, source_doc_id: str) -> None:
+        self._central.delete_text_entities_by_source_doc(user_id, source_doc_id)
+
+
 @lru_cache
 def get_graph_store() -> GraphStore:
     settings = get_settings()
     if settings.deploy_mode == "local":
         os.makedirs(settings.local_data_dir, exist_ok=True)
-        return SqliteGraphStore(os.path.join(settings.local_data_dir, "graph.sqlite"))
+        return LocalMultiRepoGraphStore(os.path.join(settings.local_data_dir, "graph.sqlite"))
     driver = GraphDatabase.driver(
         settings.neo4j_url, auth=(settings.neo4j_user, settings.neo4j_password.get_secret_value())
     )
