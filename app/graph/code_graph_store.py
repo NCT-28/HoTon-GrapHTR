@@ -44,6 +44,17 @@ class GraphStore(ABC):
         ...
 
     @abstractmethod
+    def replace_files_in_repo(
+        self, repo: dict, stale_file_paths: list[str], symbols: list[dict], edges: list[dict]
+    ) -> None:
+        """Incremental variant of replace_repo_graph: only symbols/edges whose file_path is
+        in `stale_file_paths` are deleted before `symbols`/`edges` are inserted -- every
+        other row already stored for this repo is left untouched. Same no-partial-state
+        atomicity contract as replace_repo_graph, scoped to `stale_file_paths` instead of
+        the whole repo."""
+        ...
+
+    @abstractmethod
     def get_repo(self, user_id: str, repo_id: str) -> dict | None: ...
 
     @abstractmethod
@@ -98,7 +109,7 @@ class Neo4jGraphStore(GraphStore):
             MERGE (n:CodeSymbol {id: s.id})
             SET n.repo_id = s.repo_id, n.user_id = s.user_id, n.kind = s.kind,
                 n.name = s.name, n.file_path = s.file_path, n.start_line = s.start_line,
-                n.end_line = s.end_line, n.language = s.language
+                n.end_line = s.end_line, n.language = s.language, n.content_hash = s.content_hash
             """,
             symbols=symbols,
         )
@@ -160,7 +171,7 @@ class Neo4jGraphStore(GraphStore):
                     MERGE (n:CodeSymbol {id: s.id})
                     SET n.repo_id = s.repo_id, n.user_id = s.user_id, n.kind = s.kind,
                         n.name = s.name, n.file_path = s.file_path, n.start_line = s.start_line,
-                        n.end_line = s.end_line, n.language = s.language
+                        n.end_line = s.end_line, n.language = s.language, n.content_hash = s.content_hash
                     """,
                     symbols=symbols,
                 )
@@ -337,9 +348,11 @@ class SqliteGraphStore(GraphStore):
                     file_path TEXT,
                     start_line INTEGER,
                     end_line INTEGER,
-                    language TEXT
+                    language TEXT,
+                    content_hash TEXT
                 );
                 CREATE INDEX IF NOT EXISTS code_symbols_scope_idx ON code_symbols (user_id, repo_id);
+                CREATE INDEX IF NOT EXISTS code_symbols_file_idx ON code_symbols (user_id, repo_id, file_path);
                 CREATE TABLE IF NOT EXISTS code_edges (
                     source TEXT NOT NULL,
                     target TEXT NOT NULL,
@@ -368,6 +381,14 @@ class SqliteGraphStore(GraphStore):
                 CREATE INDEX IF NOT EXISTS mentions_edges_target_idx ON mentions_edges (target);
                 """
             )
+            # A db created before content_hash existed has the table but not the column
+            # (CREATE TABLE IF NOT EXISTS above is then a no-op) -- sqlite has no
+            # `ADD COLUMN IF NOT EXISTS`, so add it and swallow the "already exists"
+            # error for dbs created fresh (which already have it from the CREATE TABLE).
+            try:
+                self._conn.execute("ALTER TABLE code_symbols ADD COLUMN content_hash TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     # --- unlocked helpers, only ever called from inside a `with self._lock, self._conn:` block ---
 
@@ -386,16 +407,22 @@ class SqliteGraphStore(GraphStore):
     def _upsert_symbols_unlocked(self, symbols: list[dict]) -> None:
         if not symbols:
             return
+        # Many existing callers (tests, older code) build symbol dicts without
+        # content_hash -- default to None rather than requiring every one of them
+        # to add the new field just to keep working.
+        rows = [{**s, "content_hash": s.get("content_hash")} for s in symbols]
         self._conn.executemany(
             """
-            INSERT INTO code_symbols (id, repo_id, user_id, kind, name, file_path, start_line, end_line, language)
-            VALUES (:id, :repo_id, :user_id, :kind, :name, :file_path, :start_line, :end_line, :language)
+            INSERT INTO code_symbols
+                (id, repo_id, user_id, kind, name, file_path, start_line, end_line, language, content_hash)
+            VALUES
+                (:id, :repo_id, :user_id, :kind, :name, :file_path, :start_line, :end_line, :language, :content_hash)
             ON CONFLICT (id) DO UPDATE SET
                 repo_id = excluded.repo_id, user_id = excluded.user_id, kind = excluded.kind,
                 name = excluded.name, file_path = excluded.file_path, start_line = excluded.start_line,
-                end_line = excluded.end_line, language = excluded.language
+                end_line = excluded.end_line, language = excluded.language, content_hash = excluded.content_hash
             """,
-            symbols,
+            rows,
         )
 
     def _upsert_code_edges_unlocked(self, edges: list[dict]) -> None:
@@ -469,7 +496,7 @@ class SqliteGraphStore(GraphStore):
     def get_subgraph(self, user_id: str, repo_id: str) -> tuple[list[dict], list[dict]]:
         with self._lock:
             symbol_rows = self._conn.execute(
-                "SELECT id, repo_id, user_id, kind, name, file_path, start_line, end_line, language "
+                "SELECT id, repo_id, user_id, kind, name, file_path, start_line, end_line, language, content_hash "
                 "FROM code_symbols WHERE user_id = ? AND repo_id = ?",
                 (user_id, repo_id),
             ).fetchall()
