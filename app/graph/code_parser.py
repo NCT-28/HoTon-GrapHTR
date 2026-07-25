@@ -98,8 +98,11 @@ class ParsedEdge:
     type: str
 
 
-def _symbol_id(file_path: str, kind: str, qualified_name: str) -> str:
-    return hashlib.sha1(f"{file_path}\x00{kind}\x00{qualified_name}".encode("utf8")).hexdigest()
+def _symbol_id(repo_id: str, file_path: str, kind: str, qualified_name: str) -> str:
+    # repo_id is part of the hash input, not just file_path, so two different repos
+    # that happen to share a file_path (e.g. the same local_path ingested twice under
+    # different repo_ids) never collide on symbol id / Qdrant point id / sqlite PK.
+    return hashlib.sha1(f"{repo_id}\x00{file_path}\x00{kind}\x00{qualified_name}".encode("utf8")).hexdigest()
 
 
 def _content_hash(data: bytes) -> str:
@@ -149,7 +152,7 @@ def _superclass_names(node, config: LanguageConfig, source: bytes) -> list[str]:
     return [_text(c, source) for c in field_node.children if c.type == "identifier"]
 
 
-def _parse_file(file_path: str, ext: str):
+def _parse_file(repo_id: str, file_path: str, ext: str):
     """Returns (symbols, resolved_defines, pending_calls, pending_imports, pending_inherits)
     where resolved_defines is [(parent_id, child_id)] (already known within
     this file) and the pending_* lists are [(source_id, target_name)] to be
@@ -161,7 +164,7 @@ def _parse_file(file_path: str, ext: str):
         source = f.read()
     tree = parser.parse(source)
 
-    module_id = _symbol_id(file_path, "module", "")
+    module_id = _symbol_id(repo_id, file_path, "module", "")
     symbols = [
         ParsedSymbol(
             id=module_id, kind="module", name=file_path, file_path=file_path,
@@ -180,7 +183,7 @@ def _parse_file(file_path: str, ext: str):
             if name is not None:
                 kind = config.definition_types[node.type]
                 qualified_name = f"{enclosing_qualified_name}.{name}" if enclosing_qualified_name else name
-                symbol_id = _symbol_id(file_path, kind, qualified_name)
+                symbol_id = _symbol_id(repo_id, file_path, kind, qualified_name)
                 symbols.append(
                     ParsedSymbol(
                         id=symbol_id, kind=kind, name=name,
@@ -209,7 +212,7 @@ def _parse_file(file_path: str, ext: str):
     return symbols, resolved_defines, pending_calls, pending_imports, pending_inherits
 
 
-def parse_files(file_paths: list[str]):
+def parse_files(repo_id: str, file_paths: list[str]):
     """Parse a specific set of files (not a full tree walk) — the incremental-reindex
     entry point: only files that changed need re-parsing. Returns the same shape as
     parse_repo's per-file accumulation, before edge resolution (resolve_edges)."""
@@ -222,7 +225,7 @@ def parse_files(file_paths: list[str]):
         ext = os.path.splitext(file_path)[1]
         if ext not in LANGUAGE_CONFIGS:
             continue
-        symbols, defines, calls, imports, inherits = _parse_file(file_path, ext)
+        symbols, defines, calls, imports, inherits = _parse_file(repo_id, file_path, ext)
         all_symbols.extend(symbols)
         resolved_defines.extend(defines)
         pending_calls.extend(calls)
@@ -276,7 +279,7 @@ def _as_index_dicts(symbols: list[ParsedSymbol]) -> list[dict]:
     return [{"id": s.id, "name": s.name, "kind": s.kind, "file_path": s.file_path} for s in symbols]
 
 
-def parse_repo(root_path: str) -> tuple[list[ParsedSymbol], list[ParsedEdge]]:
+def parse_repo(repo_id: str, root_path: str) -> tuple[list[ParsedSymbol], list[ParsedEdge]]:
     """Walk `root_path`, parse every recognized file, and resolve
     CALLS/IMPORTS/INHERITS edges against a repo-wide name index built after
     all files are parsed."""
@@ -286,7 +289,7 @@ def parse_repo(root_path: str) -> tuple[list[ParsedSymbol], list[ParsedEdge]]:
         for filename in filenames:
             file_paths.append(os.path.join(dirpath, filename))
 
-    all_symbols, resolved_defines, pending_calls, pending_imports, pending_inherits = parse_files(file_paths)
+    all_symbols, resolved_defines, pending_calls, pending_imports, pending_inherits = parse_files(repo_id, file_paths)
     edges = resolve_edges(
         _as_index_dicts(all_symbols), resolved_defines, pending_calls, pending_imports, pending_inherits
     )

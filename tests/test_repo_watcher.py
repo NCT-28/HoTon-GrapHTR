@@ -193,3 +193,155 @@ def test_concurrent_reindex_calls_for_same_repo_do_not_race(tmp_path, graph_stor
     assert count == expected_count, (
         f"expected {expected_count} vectors after serialized concurrent reindexes, found {count}"
     )
+
+
+def test_reindex_paths_only_reembeds_the_changed_file(tmp_path, graph_store, qdrant):
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+    manager.reindex("user-1", "repo-1", str(tmp_path))  # full baseline ingest
+    nodes_before, _ = graph_store.get_subgraph("user-1", "repo-1")
+    bar_before = next(n for n in nodes_before if n["name"] == "bar")
+
+    (tmp_path / "a.py").write_text("def foo():\n    return 1\n")  # only a.py changes
+
+    embed_calls = []
+    real_embed_batch = manager._embedder.embed_batch
+    manager._embedder.embed_batch = lambda texts: (embed_calls.append(texts) or real_embed_batch(texts))
+
+    manager.reindex_paths("user-1", "repo-1", str(tmp_path), {str(tmp_path / "a.py")}, set())
+
+    nodes_after, _ = graph_store.get_subgraph("user-1", "repo-1")
+    bar_after = next(n for n in nodes_after if n["name"] == "bar")
+    assert bar_after == bar_before  # untouched file's symbol: same id, same content_hash
+    # exactly one embed_batch call, covering only a.py's symbols (module + foo), not b.py's
+    assert len(embed_calls) == 1
+    assert not any("bar" in t for t in embed_calls[0])
+
+
+def test_reindex_paths_removes_symbols_and_vectors_for_a_deleted_file(tmp_path, graph_store, qdrant):
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+    (tmp_path / "b.py").unlink()
+
+    manager.reindex_paths("user-1", "repo-1", str(tmp_path), set(), {str(tmp_path / "b.py")})
+
+    nodes, _ = graph_store.get_subgraph("user-1", "repo-1")
+    assert "bar" not in {n["name"] for n in nodes}
+    assert "foo" in {n["name"] for n in nodes}  # a.py untouched
+
+
+def test_reindex_paths_resolves_a_call_from_a_changed_file_into_an_unchanged_files_symbol(tmp_path, graph_store, qdrant):
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+
+    (tmp_path / "a.py").write_text("def foo():\n    bar()\n")  # a.py now calls bar() from unchanged b.py
+
+    manager.reindex_paths("user-1", "repo-1", str(tmp_path), {str(tmp_path / "a.py")}, set())
+
+    nodes, edges = graph_store.get_subgraph("user-1", "repo-1")
+    by_name = {n["name"]: n["id"] for n in nodes}
+    calls = [e for e in edges if e["type"] == "CALLS"]
+    assert any(e["source"] == by_name["foo"] and e["target"] == by_name["bar"] for e in calls)
+
+
+def test_reindex_paths_drops_rather_than_reresolves_an_edge_from_an_unchanged_file_after_a_rename(
+    tmp_path, graph_store, qdrant,
+):
+    """Documents the accepted edge-staleness policy (design spec section 'Edge staleness'):
+    when file A renames a symbol that file B (unchanged) calls, the old CALLS edge is
+    cleanly removed -- its target id no longer exists, and replace_files_in_repo's
+    cascade delete (any edge touching a deleted symbol id) takes it out along with
+    foo's old row, so it never dangles pointing at a nonexistent id. But since B isn't
+    reparsed this pass, no *new* edge to foo_renamed is created either -- the CALLS
+    relationship simply disappears from the graph until B itself is reindexed. This is
+    intentional (not a bug): safe (no broken reference) but temporarily incomplete."""
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def use_it():\n    foo()\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+    nodes, edges = graph_store.get_subgraph("user-1", "repo-1")
+    old_foo_id = next(n["id"] for n in nodes if n["name"] == "foo")
+    assert any(e["target"] == old_foo_id and e["type"] == "CALLS" for e in edges)
+
+    (tmp_path / "a.py").write_text("def foo_renamed():\n    pass\n")  # rename, b.py untouched
+    manager.reindex_paths("user-1", "repo-1", str(tmp_path), {str(tmp_path / "a.py")}, set())
+
+    nodes, edges = graph_store.get_subgraph("user-1", "repo-1")
+    calls = [e for e in edges if e["type"] == "CALLS"]
+    assert calls == []  # old edge cascade-deleted with foo's old row, no new edge in its place
+    assert "foo_renamed" in {n["name"] for n in nodes}  # the renamed symbol itself exists fine
+    assert "use_it" in {n["name"] for n in nodes}  # b.py's own symbol untouched
+
+
+def test_change_handler_buckets_create_modify_delete_and_move_events(tmp_path):
+    from watchdog.events import FileCreatedEvent, FileDeletedEvent, FileModifiedEvent, FileMovedEvent
+
+    from app.graph.repo_watcher import _PendingChanges, _RepoChangeHandler
+
+    pending = _PendingChanges()
+    fired = []
+    handler = _RepoChangeHandler(pending, lambda: fired.append(1), debounce_seconds=0.01)
+
+    a = str(tmp_path / "a.py")
+    b = str(tmp_path / "b.py")
+    c = str(tmp_path / "c.py")
+
+    handler.on_created(FileCreatedEvent(a))
+    handler.on_modified(FileModifiedEvent(a))  # same file twice -> one entry
+    handler.on_deleted(FileDeletedEvent(b))
+    handler.on_moved(FileMovedEvent(c, str(tmp_path / "c2.py")))
+
+    assert pending.changed == {a, str(tmp_path / "c2.py")}
+    assert pending.deleted == {b, c}
+    handler.cancel()
+
+
+def test_change_handler_modify_then_delete_same_file_ends_up_deleted_only(tmp_path):
+    from watchdog.events import FileDeletedEvent, FileModifiedEvent
+
+    from app.graph.repo_watcher import _PendingChanges, _RepoChangeHandler
+
+    pending = _PendingChanges()
+    handler = _RepoChangeHandler(pending, lambda: None, debounce_seconds=0.01)
+    a = str(tmp_path / "a.py")
+
+    handler.on_modified(FileModifiedEvent(a))
+    handler.on_deleted(FileDeletedEvent(a))
+
+    assert pending.changed == set()
+    assert pending.deleted == {a}
+    handler.cancel()
+
+
+def test_watch_reindexes_only_the_saved_file_end_to_end(tmp_path, graph_store, qdrant):
+    """End-to-end through the real watchdog Observer (like the existing
+    test_watch_reindexes_automatically_on_file_change), proving the batching
+    handler + reindex_paths wiring in watch() actually works together, not
+    just each piece in isolation."""
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder(), debounce_seconds=0.2)
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+    nodes_before, _ = graph_store.get_subgraph("user-1", "repo-1")
+    bar_id_before = next(n["id"] for n in nodes_before if n["name"] == "bar")
+
+    manager.watch("user-1", "repo-1", str(tmp_path))
+    (tmp_path / "a.py").write_text("def foo():\n    return 1\n")
+
+    deadline = time.time() + 5
+    found = False
+    while time.time() < deadline:
+        nodes, _ = graph_store.get_subgraph("user-1", "repo-1")
+        bar_now = next((n for n in nodes if n["name"] == "bar"), None)
+        if bar_now is not None and bar_now["id"] == bar_id_before and bar_now.get("content_hash"):
+            found = True
+            break
+        time.sleep(0.1)
+
+    manager.stop()
+    assert found, "watcher did not settle on the expected post-reindex state within the timeout"

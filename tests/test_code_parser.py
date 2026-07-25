@@ -21,7 +21,7 @@ def test_parse_repo_extracts_python_symbols_defines_calls_imports_inherits(tmp_p
         "    d = Dog()\n"
     )
 
-    symbols, edges = parse_repo(str(tmp_path))
+    symbols, edges = parse_repo("r1", str(tmp_path))
 
     names = {s.name for s in symbols}
     assert {"Animal", "Dog", "helper", "speak", "bark", "use_dog"} <= names
@@ -45,7 +45,7 @@ def test_parse_repo_extracts_python_symbols_defines_calls_imports_inherits(tmp_p
 def test_parse_repo_handles_typescript(tmp_path):
     (tmp_path / "util.ts").write_text("export function add(a: number, b: number): number {\n  return a + b;\n}\n")
 
-    symbols, _ = parse_repo(str(tmp_path))
+    symbols, _ = parse_repo("r1", str(tmp_path))
 
     assert any(s.name == "add" and s.kind == "function" for s in symbols)
 
@@ -53,7 +53,7 @@ def test_parse_repo_handles_typescript(tmp_path):
 def test_parse_repo_handles_rust(tmp_path):
     (tmp_path / "lib.rs").write_text("fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n")
 
-    symbols, _ = parse_repo(str(tmp_path))
+    symbols, _ = parse_repo("r1", str(tmp_path))
 
     assert any(s.name == "add" and s.kind == "function" for s in symbols)
 
@@ -61,7 +61,7 @@ def test_parse_repo_handles_rust(tmp_path):
 def test_parse_repo_ignores_unrecognized_files(tmp_path):
     (tmp_path / "README.md").write_text("# hello\n")
 
-    symbols, edges = parse_repo(str(tmp_path))
+    symbols, edges = parse_repo("r1", str(tmp_path))
 
     assert symbols == []
     assert edges == []
@@ -73,7 +73,7 @@ def test_parse_repo_skips_ignored_directories(tmp_path):
     (ignored / "lib.js").write_text("function shouldNotAppear() {}\n")
     (tmp_path / "app.js").write_text("function shouldAppear() {}\n")
 
-    symbols, _ = parse_repo(str(tmp_path))
+    symbols, _ = parse_repo("r1", str(tmp_path))
 
     names = {s.name for s in symbols}
     assert "shouldAppear" in names
@@ -83,8 +83,8 @@ def test_parse_repo_skips_ignored_directories(tmp_path):
 def test_parse_repo_symbol_ids_are_deterministic_across_repeated_parses(tmp_path):
     (tmp_path / "a.py").write_text("def foo():\n    pass\n")
 
-    symbols_1, _ = parse_repo(str(tmp_path))
-    symbols_2, _ = parse_repo(str(tmp_path))
+    symbols_1, _ = parse_repo("r1", str(tmp_path))
+    symbols_2, _ = parse_repo("r1", str(tmp_path))
 
     ids_1 = {s.name: s.id for s in symbols_1}
     ids_2 = {s.name: s.id for s in symbols_2}
@@ -98,10 +98,10 @@ def test_parse_repo_id_and_content_hash_are_stable_across_an_unrelated_line_shif
     even though start_line/end_line shift."""
     path = tmp_path / "a.py"
     path.write_text("def foo():\n    pass\n\n\ndef bar():\n    pass\n")
-    before = {s.name: (s.id, s.content_hash) for s in parse_repo(str(tmp_path))[0]}
+    before = {s.name: (s.id, s.content_hash) for s in parse_repo("r1", str(tmp_path))[0]}
 
     path.write_text("\ndef foo():\n    pass\n\n\ndef bar():\n    pass\n")  # blank line inserted above foo
-    after = {s.name: (s.id, s.content_hash) for s in parse_repo(str(tmp_path))[0]}
+    after = {s.name: (s.id, s.content_hash) for s in parse_repo("r1", str(tmp_path))[0]}
 
     assert before["foo"] == after["foo"]  # id AND content_hash both stable
     assert before["bar"] == after["bar"]  # id AND content_hash both stable
@@ -110,10 +110,10 @@ def test_parse_repo_id_and_content_hash_are_stable_across_an_unrelated_line_shif
 def test_parse_repo_content_hash_changes_when_symbol_body_edited(tmp_path):
     path = tmp_path / "a.py"
     path.write_text("def foo():\n    return 1\n")
-    before = next(s for s in parse_repo(str(tmp_path))[0] if s.name == "foo")
+    before = next(s for s in parse_repo("r1", str(tmp_path))[0] if s.name == "foo")
 
     path.write_text("def foo():\n    return 2\n")
-    after = next(s for s in parse_repo(str(tmp_path))[0] if s.name == "foo")
+    after = next(s for s in parse_repo("r1", str(tmp_path))[0] if s.name == "foo")
 
     assert before.id == after.id  # same file+kind+qualified_name -> same id
     assert before.content_hash != after.content_hash
@@ -130,7 +130,7 @@ def test_parse_repo_same_named_symbols_in_different_scopes_get_different_ids(tmp
         "        pass\n"
     )
 
-    symbols, _ = parse_repo(str(tmp_path))
+    symbols, _ = parse_repo("r1", str(tmp_path))
 
     init_ids = {s.id for s in symbols if s.name == "__init__"}
     assert len(init_ids) == 2
@@ -142,7 +142,7 @@ def test_parse_files_parses_only_the_given_paths(tmp_path):
     (tmp_path / "a.py").write_text("def foo():\n    pass\n")
     (tmp_path / "b.py").write_text("def bar():\n    pass\n")
 
-    symbols, defines, calls, imports, inherits = parse_files([str(tmp_path / "a.py")])
+    symbols, defines, calls, imports, inherits = parse_files("r1", [str(tmp_path / "a.py")])
 
     names = {s.name for s in symbols}
     assert "foo" in names
