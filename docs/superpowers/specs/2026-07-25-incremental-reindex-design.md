@@ -32,9 +32,11 @@ that actually changed. Symbols in untouched files keep their id, their
 ## Non-goals
 
 - No cross-file edge re-resolution beyond the files that changed in this
-  debounce window. A rename in file A leaves stale `CALLS`/`IMPORTS`/
-  `INHERITS` edges from an *unchanged* file B pointing at the old symbol
-  until B is itself edited — accepted, self-healing, documented in Design §3.
+  debounce window. A rename in file A cascade-deletes file B's `CALLS`/
+  `IMPORTS`/`INHERITS` edge into the old symbol (its target id no longer
+  exists, so there's nothing to dangle), but creates no replacement edge
+  since B isn't reparsed — the relationship just disappears from the graph
+  until B is itself edited. Accepted, self-healing, documented in Design §3.
 - No migration script for previously-ingested repos (Rollout section).
 - No change to `ingest_codebase`'s first-time full parse behavior, or to
   `reindex()` as a full-rebuild fallback — both keep working exactly as
@@ -171,9 +173,10 @@ TDD per layer, mirroring the existing test split:
   (re)written/(re)embedded — asserted via embed-call count, the key proof
   the goal is met — and the other N-1 files' symbol ids/content hashes are
   untouched. File deletion removes its symbols + vectors, leaves others
-  intact. The accepted-stale-edge case (rename in A, unchanged B still
-  pointing at old id) gets an explicit test asserting *that* behavior, so
-  it reads as an intentional contract, not a latent bug. Full existing
+  intact. The accepted edge-staleness case (rename in A cascade-deletes
+  unchanged B's edge into the old symbol, no replacement edge created since
+  B isn't reparsed) gets an explicit test asserting *that* behavior, so it
+  reads as an intentional contract, not a latent bug. Full existing
   `test_repo_watcher.py` suite (full `reindex()` path) must keep passing
   unmodified.
 - **`code_graph_store.py`**: `replace_files_in_repo` tested per backend
