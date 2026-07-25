@@ -50,6 +50,24 @@ class FakeGraphStore(GraphStore):
         self.upsert_symbols(symbols)
         self.upsert_code_edges(edges)
 
+    def replace_files_in_repo(
+        self, repo: dict, stale_file_paths: list[str], symbols: list[dict], edges: list[dict]
+    ) -> None:
+        stale_ids = {
+            sid for sid, s in self.symbols.items()
+            if s["user_id"] == repo["user_id"] and s["repo_id"] == repo["repo_id"]
+            and s["file_path"] in stale_file_paths
+        }
+        for sid in stale_ids:
+            del self.symbols[sid]
+        self.code_edges = [
+            e for e in self.code_edges if e["source"] not in stale_ids and e["target"] not in stale_ids
+        ]
+        self.mentions_edges = [e for e in self.mentions_edges if e["target"] not in stale_ids]
+        self.upsert_repo(repo)
+        self.upsert_symbols(symbols)
+        self.upsert_code_edges(edges)
+
     def get_repo(self, user_id: str, repo_id: str) -> dict | None:
         return self.repos.get((user_id, repo_id))
 

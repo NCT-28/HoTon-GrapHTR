@@ -50,6 +50,33 @@ def test_get_subgraph_includes_text_entities_that_mention_a_symbol(graph_store):
     assert {"source": "e1", "target": "s1", "type": "MENTIONS"} in edges
 
 
+def test_replace_files_in_repo_only_touches_symbols_in_stale_file_paths(graph_store):
+    graph_store.upsert_repo({"user_id": "u1", "repo_id": "r1", "source": "/tmp/r1",
+                              "local_path": "/tmp/r1", "last_indexed_at": "t0"})
+    graph_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "hash-a"},
+        {"id": "b", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "bar",
+         "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "hash-b"},
+    ])
+    graph_store.upsert_code_edges([{"source": "a", "target": "b", "type": "CALLS"}])
+
+    graph_store.replace_files_in_repo(
+        {"user_id": "u1", "repo_id": "r1", "source": "/tmp/r1", "local_path": "/tmp/r1", "last_indexed_at": "t1"},
+        ["a.py"],
+        [{"id": "a2", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo_renamed",
+          "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "hash-a2"}],
+        [],
+    )
+
+    nodes, edges = graph_store.get_subgraph("u1", "r1")
+    by_name = {n["name"]: n for n in nodes}
+    assert "foo" not in by_name
+    assert by_name["foo_renamed"]["content_hash"] == "hash-a2"
+    assert by_name["bar"]["content_hash"] == "hash-b"
+    assert edges == []
+
+
 def test_list_repos_returns_all_repos_across_users(graph_store):
     graph_store.upsert_repo({"user_id": "u1", "repo_id": "r1", "source": "/tmp/r1",
                               "local_path": "/tmp/r1", "last_indexed_at": "2026-07-22T00:00:00"})

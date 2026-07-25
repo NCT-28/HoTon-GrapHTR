@@ -135,3 +135,29 @@ def test_get_subgraph_includes_text_entities_that_mention_a_symbol_in_a_repo_dir
 
     assert {n["id"] for n in nodes} == {"s1", "e1"}
     assert {"source": "e1", "target": "s1", "type": "MENTIONS"} in edges
+
+
+def test_replace_files_in_repo_routes_to_the_right_repo_store_and_leaves_others_untouched(tmp_path, store):
+    repo1 = _repo_dir(tmp_path, "repo1")
+    repo2 = _repo_dir(tmp_path, "repo2")
+    store.replace_repo_graph(
+        {"user_id": "u1", "repo_id": "r1", "source": repo1, "local_path": repo1, "last_indexed_at": "t0"},
+        [_symbol("r1", "a", "foo")], [],
+    )
+    store.replace_repo_graph(
+        {"user_id": "u1", "repo_id": "r2", "source": repo2, "local_path": repo2, "last_indexed_at": "t0"},
+        [_symbol("r2", "b", "bar")], [],
+    )
+
+    store.replace_files_in_repo(
+        {"user_id": "u1", "repo_id": "r1", "source": repo1, "local_path": repo1, "last_indexed_at": "t1"},
+        ["a.py"],
+        [{"id": "a2", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo_renamed",
+          "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "h"}],
+        [],
+    )
+
+    r1_nodes, _ = store.get_subgraph("u1", "r1")
+    assert [n["name"] for n in r1_nodes] == ["foo_renamed"]
+    r2_nodes, _ = store.get_subgraph("u1", "r2")
+    assert [n["name"] for n in r2_nodes] == ["bar"]  # repo2 untouched

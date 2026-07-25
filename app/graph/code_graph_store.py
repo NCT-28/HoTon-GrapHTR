@@ -768,6 +768,12 @@ class LocalMultiRepoGraphStore(GraphStore):
         self._central.upsert_repo(repo)
         self._repo_store(repo["local_path"]).replace_repo_graph(repo, symbols, edges)
 
+    def replace_files_in_repo(
+        self, repo: dict, stale_file_paths: list[str], symbols: list[dict], edges: list[dict]
+    ) -> None:
+        self._central.upsert_repo(repo)
+        self._repo_store(repo["local_path"]).replace_files_in_repo(repo, stale_file_paths, symbols, edges)
+
     def get_repo(self, user_id: str, repo_id: str) -> dict | None:
         return self._central.get_repo(user_id, repo_id)
 
