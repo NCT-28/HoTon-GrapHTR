@@ -66,11 +66,18 @@ load (CDN-hosted vis-network, like graphify-out/graph.html).
    docker-hoton-graphtr-1` for the Docker deploy, or the `install.sh`-started log file for
    zero-service), and read `repo_id` back from Neo4j if the response didn't arrive.
 2. **Export**: `mcp__hoton-graphtr__export_graph_snapshot(user_id, repo_id)` → returns
-   `{repo_id, node_count, edge_count, node_kinds, edge_types, nodes, edges}`.
+   `{repo_id, node_count, edge_count, node_kinds, edge_types, last_indexed_at, code_symbol_count,
+   nodes, edges}`. `last_indexed_at` and `code_symbol_count` (code-symbol vector count for this
+   repo — resolved per-repo under `DEPLOY_MODE=local`, see `app/clients/qdrant_store.py`'s
+   `count_code_symbol_embeddings`) can be `null` if the repo isn't registered yet.
 3. **Write**: `graphtr-out/graph.json` (`{nodes, edges}`) and `graphtr-out/manifest.json`
-   (`repo_id`, `user_id`, counts, `node_kinds`, `edge_types`, `exported_at`).
+   (`repo_id`, `user_id`, counts, `node_kinds`, `edge_types`, `last_indexed_at`,
+   `code_symbol_count`, `exported_at`).
 4. **Build viewer**: `python3 scripts/build_viewer.py --out-dir graphtr-out` → generates `graphtr-out/graphtr.html`
-   (under a second — layout runs live in the browser via vis-network, not precomputed).
+   (under a second — layout runs live in the browser via vis-network, not precomputed). The sidebar's
+   "Repo Overview" panel (symbol-kind/edge-type breakdown, code-vector count, last-indexed time) is
+   baked from `graph.json`/`manifest.json` at this step — a static snapshot, viewable by opening the
+   file directly with no server running.
 
 ## Refresh — code changed since last ingest
 

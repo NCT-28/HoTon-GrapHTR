@@ -87,3 +87,87 @@ def test_get_repo_qdrant_client_returns_distinct_clients_for_different_repos(tmp
     assert client1 is not client2
 
     get_repo_qdrant_client.cache_clear()
+
+
+def _upsert_code_symbol_points(client, count: int, user_id="u1", repo_id="r1") -> None:
+    import uuid
+
+    from qdrant_client.models import PointStruct
+
+    from app.clients.qdrant_store import CODE_SYMBOL_EMBEDDINGS
+
+    client.upsert(
+        collection_name=CODE_SYMBOL_EMBEDDINGS,
+        points=[
+            PointStruct(
+                id=str(uuid.uuid4()), vector=[0.0] * 384, payload={"user_id": user_id, "repo_id": repo_id},
+            )
+            for _ in range(count)
+        ],
+        wait=True,
+    )
+
+
+def test_count_code_symbol_embeddings_reads_per_repo_client_in_local_mode(tmp_path, monkeypatch, graph_store):
+    from app.clients.qdrant_store import count_code_symbol_embeddings, get_repo_qdrant_client
+
+    monkeypatch.setenv("DEPLOY_MODE", "local")
+    from app.config import get_settings
+    get_settings.cache_clear()
+
+    repo_path = tmp_path / "repo1"
+    repo_path.mkdir()
+    graph_store.upsert_repo({
+        "user_id": "u1", "repo_id": "r1", "source": str(repo_path),
+        "local_path": str(repo_path), "last_indexed_at": "t1",
+    })
+    _upsert_code_symbol_points(get_repo_qdrant_client(str(repo_path)), 3)
+
+    count = count_code_symbol_embeddings(None, graph_store, "u1", "r1")
+
+    assert count == 3
+    get_repo_qdrant_client.cache_clear()
+    get_settings.cache_clear()
+
+
+def test_count_code_symbol_embeddings_returns_none_when_repo_unregistered_in_local_mode(monkeypatch, graph_store):
+    from app.clients.qdrant_store import count_code_symbol_embeddings
+    from app.config import get_settings
+
+    monkeypatch.setenv("DEPLOY_MODE", "local")
+    get_settings.cache_clear()
+
+    assert count_code_symbol_embeddings(None, graph_store, "u1", "does-not-exist") is None
+
+    get_settings.cache_clear()
+
+
+def test_count_code_symbol_embeddings_returns_none_when_local_path_gone(monkeypatch, graph_store):
+    from app.clients.qdrant_store import count_code_symbol_embeddings
+    from app.config import get_settings
+
+    monkeypatch.setenv("DEPLOY_MODE", "local")
+    get_settings.cache_clear()
+    graph_store.upsert_repo({
+        "user_id": "u1", "repo_id": "r1", "source": "/does/not/exist",
+        "local_path": "/does/not/exist", "last_indexed_at": "t1",
+    })
+
+    assert count_code_symbol_embeddings(None, graph_store, "u1", "r1") is None
+
+    get_settings.cache_clear()
+
+
+def test_count_code_symbol_embeddings_filters_shared_client_in_server_mode(monkeypatch, graph_store, qdrant):
+    from app.clients.qdrant_store import count_code_symbol_embeddings
+    from app.config import get_settings
+
+    monkeypatch.setenv("DEPLOY_MODE", "server")
+    get_settings.cache_clear()
+    _upsert_code_symbol_points(qdrant, 2, "u1", "r1")
+    _upsert_code_symbol_points(qdrant, 5, "u1", "r2")
+
+    count = count_code_symbol_embeddings(qdrant, graph_store, "u1", "r1")
+
+    assert count == 2
+    get_settings.cache_clear()

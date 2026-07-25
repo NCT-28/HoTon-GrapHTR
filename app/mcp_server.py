@@ -17,6 +17,7 @@ from app.rag.profile import get_or_create_profile, update_profile_from_message
 from app.agentic.react import run_multi_step_retrieval
 from app.rag.retrieval import retrieve_chunks
 from app.agentic.routing import QueryComplexity, classify_query
+from app.clients.qdrant_store import count_code_symbol_embeddings
 from app.graph.code_graph_store import GraphStore
 from app.graph.graph_query import bfs_query, explain_node, fuse_graph_context, shortest_path
 from app.graph.repo_source import resolve_repo_source
@@ -128,6 +129,8 @@ class GraphSnapshotResult(BaseModel):
     edge_count: int
     node_kinds: dict[str, int]
     edge_types: dict[str, int]
+    last_indexed_at: str | None = None
+    code_symbol_count: int | None = None
     nodes: list[GraphNodeOut]
     edges: list[GraphEdgeOut]
 
@@ -270,12 +273,16 @@ def export_graph_snapshot_impl(ctx: ToolContext, user_id: str, repo_id: str) -> 
     for e in edges:
         edge_types[e["type"]] = edge_types.get(e["type"], 0) + 1
 
+    repo = ctx.graph_store.get_repo(user_id, repo_id)
+
     return GraphSnapshotResult(
         repo_id=repo_id,
         node_count=len(nodes),
         edge_count=len(edges),
         node_kinds=node_kinds,
         edge_types=edge_types,
+        last_indexed_at=repo.get("last_indexed_at") if repo else None,
+        code_symbol_count=count_code_symbol_embeddings(ctx.client, ctx.graph_store, user_id, repo_id),
         nodes=[_to_node_out(n) for n in nodes],
         edges=[GraphEdgeOut(source=e["source"], target=e["target"], type=e["type"]) for e in edges],
     )

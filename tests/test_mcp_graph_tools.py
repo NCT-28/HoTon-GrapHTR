@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from app.mcp_server import ToolContext, ingest_codebase_impl, query_code_graph_impl
+from app.mcp_server import ToolContext, export_graph_snapshot_impl, ingest_codebase_impl, query_code_graph_impl
 from app.graph.repo_watcher import RepoWatcherManager
 
 
@@ -34,6 +34,37 @@ def test_query_code_graph_query_mode_returns_matching_subgraph(graph_store):
 
     assert len(result.nodes) == 1
     assert result.nodes[0].name == "foo"
+    ctx.watcher_manager.stop()
+
+
+def test_export_graph_snapshot_includes_last_indexed_at_from_repo_metadata(graph_store):
+    graph_store.upsert_repo({
+        "user_id": "u1", "repo_id": "r1", "source": "/tmp/r1",
+        "local_path": "/tmp/r1", "last_indexed_at": "2026-07-25T00:00:00",
+    })
+    graph_store.upsert_symbols([
+        {"id": "1", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python"},
+    ])
+    ctx = _ctx(graph_store)
+
+    result = export_graph_snapshot_impl(ctx, "u1", "r1")
+
+    assert result.last_indexed_at == "2026-07-25T00:00:00"
+    ctx.watcher_manager.stop()
+
+
+def test_export_graph_snapshot_last_indexed_at_none_when_repo_unregistered(graph_store):
+    graph_store.upsert_symbols([
+        {"id": "1", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python"},
+    ])
+    ctx = _ctx(graph_store)
+
+    result = export_graph_snapshot_impl(ctx, "u1", "r1")
+
+    assert result.last_indexed_at is None
+    assert result.code_symbol_count is None  # ctx.client is None in this test double
     ctx.watcher_manager.stop()
 
 

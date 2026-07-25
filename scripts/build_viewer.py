@@ -100,7 +100,13 @@ def build_data(nodes: list[dict], edges: list[dict]):
         for k in sorted(kind_counts, key=lambda k: -kind_counts[k])
     ]
 
-    return raw_nodes, raw_edges, legend
+    edge_type_counts = Counter(e["type"] for e in edges)
+    edge_legend = [
+        {"type": t, "color": EDGE_COLORS.get(t, "#565f89"), "label": t, "count": edge_type_counts[t]}
+        for t in sorted(edge_type_counts, key=lambda t: -edge_type_counts[t])
+    ]
+
+    return raw_nodes, raw_edges, legend, edge_legend
 
 
 def main():
@@ -115,7 +121,7 @@ def main():
 
     graph = json.loads(graph_path.read_text())
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
-    raw_nodes, raw_edges, legend = build_data(graph["nodes"], graph["edges"])
+    raw_nodes, raw_edges, legend, edge_legend = build_data(graph["nodes"], graph["edges"])
 
     def js_json(obj) -> str:
         # Escape "</" so embedded strings can't prematurely close the <script> tag.
@@ -126,6 +132,7 @@ def main():
         .replace("__RAW_NODES__", js_json(raw_nodes))
         .replace("__RAW_EDGES__", js_json(raw_edges))
         .replace("__LEGEND__", js_json(legend))
+        .replace("__EDGE_LEGEND__", js_json(edge_legend))
         .replace("__MANIFEST__", js_json(manifest))
     )
     output_path.write_text(html)
@@ -158,6 +165,18 @@ TEMPLATE = """<!DOCTYPE html>
   .neighbor-link { display: block; padding: 2px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid #333; }
   .neighbor-link:hover { background: #2a2e42; }
   #neighbors-list { max-height: 180px; overflow-y: auto; margin-top: 4px; }
+  #overview-wrap { padding: 12px 14px; border-bottom: 1px solid #2a2e42; }
+  #overview-wrap h3 { font-size: 13px; color: #7982a9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .overview-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
+  .overview-lbl { color: #7982a9; }
+  .overview-val { color: #c0caf5; font-weight: 600; }
+  .mini-bar-group { margin-top: 8px; }
+  .mini-bar-group-label { font-size: 10px; color: #565f89; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .mini-bar-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 11px; }
+  .mini-bar-label { width: 72px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c0caf5; }
+  .mini-bar-track { flex: 1; height: 8px; background: #20222f; border-radius: 3px; overflow: hidden; }
+  .mini-bar-fill { height: 100%; border-radius: 3px; }
+  .mini-bar-count { width: 24px; text-align: right; flex-shrink: 0; color: #565f89; }
   #legend-wrap { flex: 1; overflow-y: auto; padding: 12px; }
   #legend-wrap h3 { font-size: 13px; color: #7982a9; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
   .legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; border-radius: 4px; font-size: 12px; }
@@ -183,6 +202,18 @@ TEMPLATE = """<!DOCTYPE html>
     <h3>Details</h3>
     <div id="info-content"><span class="empty">Click a node to inspect it</span></div>
   </div>
+  <div id="overview-wrap">
+    <h3>Repo Overview</h3>
+    <div id="overview-stats"></div>
+    <div class="mini-bar-group">
+      <div class="mini-bar-group-label">Symbol kinds</div>
+      <div id="overview-kinds"></div>
+    </div>
+    <div class="mini-bar-group">
+      <div class="mini-bar-group-label">Edge types</div>
+      <div id="overview-edges"></div>
+    </div>
+  </div>
   <div id="legend-wrap">
     <h3>Kinds</h3>
     <div id="legend-controls">
@@ -197,6 +228,7 @@ TEMPLATE = """<!DOCTYPE html>
 const RAW_NODES = __RAW_NODES__;
 const RAW_EDGES = __RAW_EDGES__;
 const LEGEND = __LEGEND__;
+const EDGE_LEGEND = __EDGE_LEGEND__;
 const MANIFEST = __MANIFEST__;
 
 function esc(s) {
@@ -348,6 +380,30 @@ LEGEND.forEach(l => {
   item.onclick = (e) => { if (e.target === cb) return; cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); };
   legendEl.appendChild(item);
 });
+
+function renderBreakdown(elId, entries) {
+  const el = document.getElementById(elId);
+  if (!entries.length) { el.innerHTML = '<span class="empty">none</span>'; return; }
+  const total = entries.reduce((s, e) => s + e.count, 0);
+  el.innerHTML = entries.map(e => {
+    const pct = total ? Math.round(e.count / total * 100) : 0;
+    return `
+      <div class="mini-bar-row">
+        <span class="mini-bar-label" title="${esc(e.label)}">${esc(e.label)}</span>
+        <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${pct}%;background:${e.color}"></div></div>
+        <span class="mini-bar-count">${e.count}</span>
+      </div>`;
+  }).join('');
+}
+
+// Baked at build time from graph.json (LEGEND/EDGE_LEGEND) and manifest.json
+// (code_symbol_count/last_indexed_at) -- a static snapshot, no server needed to view it.
+document.getElementById('overview-stats').innerHTML = `
+  <div class="overview-row"><span class="overview-lbl">Code vectors</span><span class="overview-val">${MANIFEST.code_symbol_count == null ? '—' : MANIFEST.code_symbol_count}</span></div>
+  <div class="overview-row"><span class="overview-lbl">Last indexed</span><span class="overview-val">${esc(MANIFEST.last_indexed_at || '—')}</span></div>
+`;
+renderBreakdown('overview-kinds', LEGEND);
+renderBreakdown('overview-edges', EDGE_LEGEND);
 
 document.getElementById('stats').innerHTML = `
   repo_id: ${esc(MANIFEST.repo_id || '?')}<br>
