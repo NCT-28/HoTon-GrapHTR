@@ -105,9 +105,22 @@ fi
 echo "Using $PYTHON_BIN ($("$PYTHON_BIN" --version))"
 
 VENV_DIR="$REPO_ROOT/.venv"
+# A dir can exist without bin/activate if a prior run was interrupted, or
+# venv creation failed partway (e.g. missing ensurepip on Debian/Ubuntu --
+# see the error hint below). Checking dir existence alone would then skip
+# creation and the later `source .../activate` fails with a confusing error.
+if [ -d "$VENV_DIR" ] && [ ! -f "$VENV_DIR/bin/activate" ]; then
+  echo "Found incomplete virtualenv at $VENV_DIR (missing bin/activate), recreating..."
+  rm -rf "$VENV_DIR"
+fi
 if [ ! -d "$VENV_DIR" ]; then
   echo "Creating virtualenv at $VENV_DIR"
-  "$PYTHON_BIN" -m venv "$VENV_DIR"
+  if ! "$PYTHON_BIN" -m venv "$VENV_DIR"; then
+    echo "Error: failed to create virtualenv with $PYTHON_BIN." >&2
+    echo "On Debian/Ubuntu this is usually a missing venv package -- try:" >&2
+    echo "  sudo apt install ${PYTHON_BIN}-venv" >&2
+    exit 1
+  fi
 fi
 
 # shellcheck disable=SC1091
