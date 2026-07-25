@@ -97,3 +97,31 @@ def test_replace_repo_graph_is_atomic_no_partial_state_visible_after_failure(neo
         "seeing new_bar (partial write) or an empty graph (partial delete) both indicate the "
         "replace is not atomic"
     )
+
+
+def test_replace_files_in_repo_only_touches_symbols_in_stale_file_paths_through_real_neo4j(neo4j_store):
+    neo4j_store.replace_repo_graph(
+        {"user_id": "test-u1", "repo_id": "test-r1", "source": "x", "local_path": "x", "last_indexed_at": "t0"},
+        [
+            {"id": "int-a", "user_id": "test-u1", "repo_id": "test-r1", "kind": "function", "name": "foo",
+             "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "hash-a"},
+            {"id": "int-b", "user_id": "test-u1", "repo_id": "test-r1", "kind": "function", "name": "bar",
+             "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "hash-b"},
+        ],
+        [{"source": "int-a", "target": "int-b", "type": "CALLS"}],
+    )
+
+    neo4j_store.replace_files_in_repo(
+        {"user_id": "test-u1", "repo_id": "test-r1", "source": "x", "local_path": "x", "last_indexed_at": "t1"},
+        ["a.py"],
+        [{"id": "int-a2", "user_id": "test-u1", "repo_id": "test-r1", "kind": "function", "name": "foo_renamed",
+          "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "hash-a2"}],
+        [],
+    )
+
+    nodes, edges = neo4j_store.get_subgraph("test-u1", "test-r1")
+    by_name = {n["name"]: n for n in nodes}
+    assert "foo" not in by_name
+    assert by_name["foo_renamed"]["content_hash"] == "hash-a2"
+    assert by_name["bar"]["content_hash"] == "hash-b"
+    assert edges == []
