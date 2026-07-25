@@ -16,10 +16,22 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from app.graph.code_graph_store import GraphStore
-from app.graph.code_parser import parse_repo
+from app.graph.code_parser import LANGUAGE_CONFIGS, _IGNORED_DIRS, parse_repo
 from app.clients.qdrant_store import CODE_SYMBOL_EMBEDDINGS
 
 _DEFAULT_DEBOUNCE_SECONDS = 2.0
+
+
+def _is_relevant_change(path: str) -> bool:
+    # parse_repo only reads recognized source extensions and skips
+    # _IGNORED_DIRS, so events elsewhere (.git/index churn, __pycache__,
+    # node_modules, non-source file saves) can't change the parsed graph --
+    # scheduling a reindex for them just burns a full repo re-parse + re-embed
+    # for nothing.
+    parts = path.split(os.sep)
+    if any(part in _IGNORED_DIRS or part.startswith(".") for part in parts[:-1]):
+        return False
+    return os.path.splitext(path)[1] in LANGUAGE_CONFIGS
 
 
 class _RepoChangeHandler(FileSystemEventHandler):
@@ -29,7 +41,11 @@ class _RepoChangeHandler(FileSystemEventHandler):
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
 
-    def _schedule(self, _event=None):
+    def _schedule(self, event=None):
+        if event is not None:
+            path = getattr(event, "dest_path", "") or event.src_path
+            if not _is_relevant_change(path):
+                return
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()

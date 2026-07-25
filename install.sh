@@ -132,6 +132,28 @@ else
 fi
 
 echo ""
+echo "Pre-downloading embedding/reasoning models (skips any already cached)..."
+"$PYTHON_BIN" <<'PYEOF' || echo "Warning: model pre-download failed, will download lazily on first request instead." >&2
+from sentence_transformers import SentenceTransformer
+from transformers import pipeline
+import torch
+from app.config import get_settings
+
+if torch.cuda.is_available():
+    print(f"GPU detected: {torch.cuda.get_device_name(0)} (CUDA {torch.version.cuda}) -- models will run on GPU.")
+else:
+    print("No NVIDIA GPU detected -- models will run on CPU.")
+
+settings = get_settings()
+print(f"  embed model: {settings.embed_model_name}")
+SentenceTransformer(settings.embed_model_name)
+print(f"  reasoning model: {settings.reasoning_model_name}")
+device = 0 if torch.cuda.is_available() else -1
+pipeline("text-generation", model=settings.reasoning_model_name, device=device)
+print("Models ready.")
+PYEOF
+
+echo ""
 echo "Setup done. .env has DEPLOY_MODE=local."
 echo "Data will be written under \$LOCAL_DATA_DIR (default ./graphtr-out)."
 

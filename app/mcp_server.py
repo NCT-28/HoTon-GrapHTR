@@ -219,7 +219,11 @@ def embed_text_impl(ctx: ToolContext, text: str) -> EmbedTextResult:
 
 
 def ingest_codebase_impl(ctx: ToolContext, user_id: str, source: str) -> IngestCodebaseResult:
-    repo_id = str(uuid.uuid4())
+    existing = next(
+        (r for r in ctx.graph_store.list_repos() if r["user_id"] == user_id and r["source"] == source),
+        None,
+    )
+    repo_id = existing["repo_id"] if existing else str(uuid.uuid4())
     local_path = resolve_repo_source(source, repo_id)
     ctx.watcher_manager.reindex(user_id, repo_id, local_path)
     ctx.watcher_manager.watch(user_id, repo_id, local_path)
