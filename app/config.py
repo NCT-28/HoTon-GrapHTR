@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     embed_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     embed_dim: int = 384
     reasoning_model_name: str = "Qwen/Qwen2.5-1.5B-Instruct"
+    reasoning_model_idle_unload_seconds: int = 300  # auto-unload reasoning model after this long unused
     searxng_url: str = "http://localhost:8888"
     browser_service_url: str = "http://localhost:8090"
     rag_port: int = 8030
