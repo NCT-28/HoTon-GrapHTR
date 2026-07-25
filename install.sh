@@ -144,6 +144,28 @@ else
   echo "DEPLOY_MODE=local" >>"$ENV_FILE"
 fi
 
+if [ "$RUN_AFTER" -eq 1 ]; then
+  # Stop any existing server before pre-downloading models below -- a
+  # leftover server (from a prior --run) holds the reasoning model in GPU
+  # memory, so the pipeline() load in the pre-download step can hit CUDA
+  # OOM if the old process is still running. Stopping it here, rather than
+  # after pre-download, also frees the local Qdrant storage lock before the
+  # new server starts further down.
+  if command -v lsof >/dev/null 2>&1; then
+    EXISTING_PIDS=$(lsof -ti tcp:8030 2>/dev/null || true)
+    if [ -n "$EXISTING_PIDS" ]; then
+      echo ""
+      echo "Stopping existing server on :8030 (pid(s) $EXISTING_PIDS) to load new code..."
+      kill $EXISTING_PIDS 2>/dev/null || true
+      sleep 1
+      STILL_RUNNING=$(lsof -ti tcp:8030 2>/dev/null || true)
+      if [ -n "$STILL_RUNNING" ]; then
+        kill -9 $STILL_RUNNING 2>/dev/null || true
+      fi
+    fi
+  fi
+fi
+
 echo ""
 echo "Pre-downloading embedding/reasoning models (skips any already cached)..."
 "$PYTHON_BIN" <<'PYEOF' || echo "Warning: model pre-download failed, will download lazily on first request instead." >&2
@@ -214,25 +236,8 @@ if [ "$RUN_AFTER" -eq 1 ]; then
   # (see the clone/pull step above) -- a healthy-but-stale server left running
   # would keep serving the old in-memory code indefinitely. Always restart so
   # --run picks up whatever just changed; other projects sharing this server
-  # will see a brief reconnect.
-  #
-  # A leftover server also holds the local Qdrant storage lock
-  # (./graphtr-out/qdrant), so a fresh start fails with
-  # portalocker.AlreadyLocked unless we stop it first.
-  if command -v lsof >/dev/null 2>&1; then
-    EXISTING_PIDS=$(lsof -ti tcp:8030 2>/dev/null || true)
-    if [ -n "$EXISTING_PIDS" ]; then
-      echo ""
-      echo "Stopping existing server on :8030 (pid(s) $EXISTING_PIDS) to load new code..."
-      kill $EXISTING_PIDS 2>/dev/null || true
-      sleep 1
-      STILL_RUNNING=$(lsof -ti tcp:8030 2>/dev/null || true)
-      if [ -n "$STILL_RUNNING" ]; then
-        kill -9 $STILL_RUNNING 2>/dev/null || true
-      fi
-    fi
-  fi
-
+  # will see a brief reconnect. (Old server already stopped above, before
+  # pre-download, to free GPU memory and the local Qdrant storage lock.)
   LOG_FILE="$REPO_ROOT/graphtr-server.log"
   echo ""
   echo "Starting server on :8030 (detached -- survives Ctrl+C / shell exit)..."
