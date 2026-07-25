@@ -1,4 +1,5 @@
 import os
+import uuid
 from functools import lru_cache
 
 from qdrant_client import QdrantClient
@@ -13,6 +14,16 @@ USER_MEMORIES = "user_memories"
 USER_PROFILES = "user_profiles"
 PROFILE_SNAPSHOTS = "profile_snapshots"
 CODE_SYMBOL_EMBEDDINGS = "code_symbol_embeddings"
+
+# Fixed, arbitrary namespace for deriving Qdrant point ids from stable symbol ids
+# (see code_parser.py's _symbol_id) via uuid5 — Qdrant only accepts u64 ints or
+# UUIDs as point ids (confirmed against Qdrant docs), not arbitrary strings, so
+# the symbol's own sha1-hex id can't be used directly.
+_SYMBOL_POINT_NAMESPACE = uuid.UUID("6f6e6f74-6f68-7274-7267-617068747200")
+
+
+def symbol_point_id(symbol_id: str) -> str:
+    return str(uuid.uuid5(_SYMBOL_POINT_NAMESPACE, symbol_id))
 
 
 def bootstrap_collections(client: QdrantClient, embed_dim: int) -> None:

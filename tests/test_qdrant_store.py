@@ -1,3 +1,23 @@
+def test_symbol_point_id_is_deterministic():
+    from app.clients.qdrant_store import symbol_point_id
+
+    assert symbol_point_id("abc123") == symbol_point_id("abc123")
+
+
+def test_symbol_point_id_differs_for_different_symbol_ids():
+    from app.clients.qdrant_store import symbol_point_id
+
+    assert symbol_point_id("abc123") != symbol_point_id("def456")
+
+
+def test_symbol_point_id_is_a_valid_uuid_string():
+    import uuid
+
+    from app.clients.qdrant_store import symbol_point_id
+
+    uuid.UUID(symbol_point_id("abc123"))  # raises ValueError if not a valid UUID string
+
+
 def test_bootstrap_creates_three_collections(qdrant):
     names = {c.name for c in qdrant.get_collections().collections}
     assert {"rag_documents", "rag_chunks", "user_memories"}.issubset(names)
