@@ -1,11 +1,32 @@
+import threading
 import time
+
+from qdrant_client.models import FieldCondition, Filter, MatchValue
 
 from app.clients.qdrant_store import CODE_SYMBOL_EMBEDDINGS
 from app.graph.repo_watcher import RepoWatcherManager
 
 
+def _count_for_repo(qdrant, repo_id: str) -> int:
+    return qdrant.count(
+        collection_name=CODE_SYMBOL_EMBEDDINGS,
+        count_filter=Filter(must=[FieldCondition(key="repo_id", match=MatchValue(value=repo_id))]),
+    ).count
+
+
 class _FakeEmbedder:
     def embed_batch(self, texts):
+        return [[float(len(t))] * 384 for t in texts]
+
+
+class _SlowFakeEmbedder:
+    """Sleeps mid-call so two reindex() calls can be made to overlap in a test."""
+
+    def __init__(self, delay: float):
+        self._delay = delay
+
+    def embed_batch(self, texts):
+        time.sleep(self._delay)
         return [[float(len(t))] * 384 for t in texts]
 
 
@@ -68,3 +89,85 @@ def test_reindex_populates_code_symbol_embeddings(tmp_path, graph_store, qdrant)
 
     count = qdrant.count(collection_name=CODE_SYMBOL_EMBEDDINGS).count
     assert count >= 1
+
+
+def test_reindex_does_not_leak_stale_symbol_vectors(tmp_path, graph_store, qdrant):
+    """Reindexing the same repo repeatedly must replace its vectors, not pile
+    up a fresh duplicate copy on top of the last one every time (that's what
+    was silently growing the collection unbounded on every debounced save)."""
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+    count_after_first = _count_for_repo(qdrant, "repo-1")
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+
+    count_after_third = _count_for_repo(qdrant, "repo-1")
+    assert count_after_third == count_after_first, (
+        f"vector count for repo-1 grew from {count_after_first} to {count_after_third} "
+        "across repeated reindexes of an unchanged repo (stale duplicates)"
+    )
+
+
+def test_reindex_removes_vectors_for_deleted_symbols(tmp_path, graph_store, qdrant):
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n\n\ndef bar():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+    count_with_two_functions = _count_for_repo(qdrant, "repo-1")
+
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+
+    count_with_one_function = _count_for_repo(qdrant, "repo-1")
+    assert count_with_one_function < count_with_two_functions, (
+        "vector for the removed `bar` symbol should be gone after reindex, "
+        f"but count went from {count_with_two_functions} to {count_with_one_function}"
+    )
+
+
+def test_reindex_does_not_touch_another_repos_vectors(tmp_path, graph_store, qdrant):
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+    manager.reindex("user-1", "repo-other", str(tmp_path))
+    count_for_other_repo = _count_for_repo(qdrant, "repo-other")
+
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+
+    assert _count_for_repo(qdrant, "repo-other") == count_for_other_repo, (
+        "repo-1's reindex must not delete or duplicate repo-other's vectors"
+    )
+
+
+def test_concurrent_reindex_calls_for_same_repo_do_not_race(tmp_path, graph_store, qdrant):
+    """Two reindex() calls for the same repo landing close together (e.g. two
+    debounced fires where the first is still embedding) must serialize, not
+    interleave their Qdrant delete+upsert -- interleaving is what produced
+    'cannot commit - no transaction is active' against the real embedded
+    Qdrant store and left duplicate/stale vectors behind."""
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_SlowFakeEmbedder(delay=0.3))
+
+    manager.reindex("user-1", "repo-1", str(tmp_path))
+    expected_count = _count_for_repo(qdrant, "repo-1")
+
+    errors = []
+
+    def run():
+        try:
+            manager.reindex("user-1", "repo-1", str(tmp_path))
+        except Exception as exc:  # noqa: BLE001 - captured to fail the test with a message
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert not errors, f"concurrent reindex raised: {errors}"
+    count = _count_for_repo(qdrant, "repo-1")
+    assert count == expected_count, (
+        f"expected {expected_count} vectors after serialized concurrent reindexes, found {count}"
+    )
