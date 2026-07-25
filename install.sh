@@ -63,6 +63,13 @@ else
   if [ -d "$TARGET_DIR/.git" ]; then
     echo "Found existing checkout at $TARGET_DIR, pulling latest..."
     git -C "$TARGET_DIR" checkout "$REPO_BRANCH"
+    # A dirty working tree (e.g. a manual patch that later got merged upstream)
+    # makes --ff-only abort with "local changes would be overwritten". Stash
+    # instead of failing so re-running the installer is always safe.
+    if [ -n "$(git -C "$TARGET_DIR" status --porcelain)" ]; then
+      echo "Local changes found in $TARGET_DIR, stashing before pull..."
+      git -C "$TARGET_DIR" stash push -u -m "install.sh auto-stash $(date +%Y%m%d-%H%M%S)"
+    fi
     git -C "$TARGET_DIR" pull --ff-only
   else
     echo "Cloning $REPO_URL ($REPO_BRANCH) into $TARGET_DIR..."
