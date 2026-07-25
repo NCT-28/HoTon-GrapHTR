@@ -68,6 +68,6 @@ def test_summary_endpoint_returns_all_six_sections(qdrant, graph_store, usage_st
     resp = client.get("/api/dashboard/summary", auth=("admin", "secret"))
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"health", "storage", "tool_usage", "by_project", "by_user"}
+    assert set(body.keys()) == {"health", "storage", "mcp_tool_usage", "route_usage", "by_project", "by_user"}
     assert len(body["health"]) == 4
     assert len(body["storage"]) == 6

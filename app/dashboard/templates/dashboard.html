@@ -66,11 +66,18 @@
 </div>
 
 <h2>Tool / route usage (last 24h)</h2>
-<div class="chart-card">
-  <b>Calls by tool / route</b>
-  <div class="bar-chart" id="tool-usage-chart"></div>
+<div class="row">
+  <div class="col">
+    <b style="font-size:12px">MCP tools — calls by tool</b>
+    <div class="bar-chart" id="mcp-tool-chart"></div>
+    <table id="mcp-tool-table"></table>
+  </div>
+  <div class="col">
+    <b style="font-size:12px">REST routes — calls by route</b>
+    <div class="bar-chart" id="route-chart"></div>
+    <table id="route-table"></table>
+  </div>
 </div>
-<div class="col"><table id="tool-usage"></table></div>
 
 <h2>By user (last 24h)</h2>
 <div class="col"><table id="by-user"></table></div>
@@ -92,13 +99,14 @@ function fmtCompact(n) {
 function renderKpi(data) {
   const totalNodes = data.by_project.reduce((s, p) => s + (p.node_count || 0), 0);
   const totalEdges = data.by_project.reduce((s, p) => s + (p.edge_count || 0), 0);
-  const totalCalls = data.tool_usage.reduce((s, t) => s + (t.calls || 0), 0);
-  const totalErrors = data.tool_usage.reduce((s, t) => s + (t.errors || 0), 0);
+  const allUsage = data.mcp_tool_usage.concat(data.route_usage);
+  const totalCalls = allUsage.reduce((s, t) => s + (t.calls || 0), 0);
+  const totalErrors = allUsage.reduce((s, t) => s + (t.errors || 0), 0);
   const totalVectors = data.storage.reduce((s, c) => s + (c.points || 0), 0);
 
   const tiles = [
     { label: 'Code graph', value: fmtCompact(totalNodes), sub: `${fmtCompact(totalEdges)} edges`, accent: '#7aa2f7' },
-    { label: 'Tool calls (24h)', value: fmtCompact(totalCalls), sub: `${data.tool_usage.length} tool${data.tool_usage.length === 1 ? '' : 's'} active`, accent: '#e0af68' },
+    { label: 'Tool calls (24h)', value: fmtCompact(totalCalls), sub: `${data.mcp_tool_usage.length} tool${data.mcp_tool_usage.length === 1 ? '' : 's'} · ${data.route_usage.length} route${data.route_usage.length === 1 ? '' : 's'}`, accent: '#e0af68' },
     { label: 'Errors (24h)', value: fmtCompact(totalErrors), sub: totalErrors ? 'needs attention' : 'clean', accent: totalErrors ? '#f7768e' : '#9ece6a' },
     { label: 'Vectors stored', value: fmtCompact(totalVectors), sub: `${data.storage.length} collections`, accent: '#bb9af7' },
   ];
@@ -246,11 +254,18 @@ async function refresh() {
     { key: 'repo_id', label: 'repo' }, { key: 'node_count', label: 'nodes' },
     { key: 'edge_count', label: 'edges' }, { key: 'last_indexed_at', label: 'last ingest' },
   ], 'no projects ingested yet');
-  renderBarChart('tool-usage-chart', data.tool_usage.map(r => ({
+  renderBarChart('mcp-tool-chart', data.mcp_tool_usage.map(r => ({
     label: r.tool_name, value: r.calls, errorCount: r.errors || 0,
   })), 'no calls in the last 24h', 'amber');
-  renderTable('tool-usage', data.tool_usage, [
+  renderTable('mcp-tool-table', data.mcp_tool_usage, [
     { key: 'tool_name', label: 'tool' }, { key: 'calls', label: 'calls' },
+    { key: 'errors', label: 'errors' }, { key: 'p50_ms', label: 'p50 ms' },
+  ], 'no calls in the last 24h');
+  renderBarChart('route-chart', data.route_usage.map(r => ({
+    label: r.tool_name, value: r.calls, errorCount: r.errors || 0,
+  })), 'no calls in the last 24h', 'amber');
+  renderTable('route-table', data.route_usage, [
+    { key: 'tool_name', label: 'route' }, { key: 'calls', label: 'calls' },
     { key: 'errors', label: 'errors' }, { key: 'p50_ms', label: 'p50 ms' },
   ], 'no calls in the last 24h');
   renderTable('by-user', data.by_user, [

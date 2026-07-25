@@ -10,6 +10,21 @@ from app.dashboard.usage_store import UsageStore
 
 logger = logging.getLogger(__name__)
 
+# tool_name values recorded from app/mcp_server.py's track_usage(...) calls --
+# the actual MCP tool surface. Everything else recorded via track_usage is a
+# REST route hit (app/rag/documents.py, memory.py, profile.py). Kept here,
+# next to track_usage, so both call sites and the dashboard split stay in sync.
+MCP_TOOL_NAMES = frozenset({
+    "get_rag_context",
+    "retrieve_chunks",
+    "extract_and_store_memories",
+    "update_profile_from_message",
+    "embed_text",
+    "ingest_codebase",
+    "query_code_graph",
+    "export_graph_snapshot",
+})
+
 
 @contextlib.contextmanager
 def track_usage(store: "UsageStore | None", tool_name: str, user_id: str, repo_id: str | None = None):

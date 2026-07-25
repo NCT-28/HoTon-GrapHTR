@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from app.clients.qdrant_store import (
     CODE_SYMBOL_EMBEDDINGS, PROFILE_SNAPSHOTS, RAG_CHUNKS, RAG_DOCUMENTS, USER_MEMORIES, USER_PROFILES,
 )
+from app.dashboard.tracker import MCP_TOOL_NAMES
 
 _COLLECTIONS = [RAG_DOCUMENTS, RAG_CHUNKS, USER_MEMORIES, USER_PROFILES, PROFILE_SNAPSHOTS, CODE_SYMBOL_EMBEDDINGS]
 
@@ -40,11 +41,18 @@ def project_breakdown(graph_store) -> list[dict]:
     return result
 
 
-def tool_usage(usage_store, hours: int = 24) -> list[dict]:
+def mcp_tool_usage(usage_store, hours: int = 24) -> list[dict]:
     if usage_store is None:
         return []
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
-    return usage_store.counts_by_tool(since)
+    return [r for r in usage_store.counts_by_tool(since) if r["tool_name"] in MCP_TOOL_NAMES]
+
+
+def route_usage(usage_store, hours: int = 24) -> list[dict]:
+    if usage_store is None:
+        return []
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    return [r for r in usage_store.counts_by_tool(since) if r["tool_name"] not in MCP_TOOL_NAMES]
 
 
 def _count_by_user_id(client, collection: str) -> dict[str, int]:

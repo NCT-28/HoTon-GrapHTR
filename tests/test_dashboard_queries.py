@@ -66,20 +66,44 @@ def test_project_breakdown_empty_when_graph_store_is_none():
     assert queries.project_breakdown(None) == []
 
 
-def test_tool_usage_delegates_to_usage_store(usage_store):
+def test_mcp_tool_usage_splits_out_mcp_tools_only(usage_store):
     now = datetime.now(timezone.utc)
     usage_store.record({
         "tool_name": "retrieve_chunks", "user_id": "u1", "repo_id": None,
         "success": True, "error_message": None, "duration_ms": 5.0, "created_at": now,
     })
+    usage_store.record({
+        "tool_name": "list_documents", "user_id": "u1", "repo_id": None,
+        "success": True, "error_message": None, "duration_ms": 3.0, "created_at": now,
+    })
 
-    rows = queries.tool_usage(usage_store)
+    rows = queries.mcp_tool_usage(usage_store)
 
     assert rows == [{"tool_name": "retrieve_chunks", "calls": 1, "errors": 0, "p50_ms": 5.0}]
 
 
-def test_tool_usage_empty_when_usage_store_is_none():
-    assert queries.tool_usage(None) == []
+def test_mcp_tool_usage_empty_when_usage_store_is_none():
+    assert queries.mcp_tool_usage(None) == []
+
+
+def test_route_usage_splits_out_non_mcp_routes_only(usage_store):
+    now = datetime.now(timezone.utc)
+    usage_store.record({
+        "tool_name": "retrieve_chunks", "user_id": "u1", "repo_id": None,
+        "success": True, "error_message": None, "duration_ms": 5.0, "created_at": now,
+    })
+    usage_store.record({
+        "tool_name": "list_documents", "user_id": "u1", "repo_id": None,
+        "success": True, "error_message": None, "duration_ms": 3.0, "created_at": now,
+    })
+
+    rows = queries.route_usage(usage_store)
+
+    assert rows == [{"tool_name": "list_documents", "calls": 1, "errors": 0, "p50_ms": 3.0}]
+
+
+def test_route_usage_empty_when_usage_store_is_none():
+    assert queries.route_usage(None) == []
 
 
 def test_user_breakdown_combines_usage_and_qdrant_counts(qdrant, usage_store):
