@@ -18,6 +18,10 @@ def storage_breakdown(client) -> list[dict]:
         except Exception:
             points = None
         result.append({"collection": name, "points": points})
+
+    total = sum(r["points"] or 0 for r in result)
+    for r in result:
+        r["percent"] = round((r["points"] or 0) / total * 100, 1) if total else 0.0
     return result
 
 

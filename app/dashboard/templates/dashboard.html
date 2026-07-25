@@ -239,8 +239,8 @@ async function refresh() {
   renderKpi(data);
   renderHealth(data.health);
   renderBarChart('storage-chart', data.storage.map(r => ({ label: r.collection, value: r.points ?? 0 })), 'no collections');
-  renderTable('storage', data.storage, [
-    { key: 'collection', label: 'collection' }, { key: 'points', label: 'points' },
+  renderTable('storage', data.storage.map(r => ({ ...r, percent: (r.percent ?? 0) + '%' })), [
+    { key: 'collection', label: 'collection' }, { key: 'points', label: 'points' }, { key: 'percent', label: '%' },
   ], 'no collections');
   renderTable('by-project', data.by_project, [
     { key: 'repo_id', label: 'repo' }, { key: 'node_count', label: 'nodes' },

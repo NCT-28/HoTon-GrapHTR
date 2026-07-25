@@ -11,6 +11,31 @@ def test_storage_breakdown_counts_all_six_collections(qdrant):
         "user_profiles", "profile_snapshots", "code_symbol_embeddings",
     }
     assert all(r["points"] == 0 for r in rows)  # fresh in-memory qdrant
+    assert all(r["percent"] == 0.0 for r in rows)  # 0 / 0 total must not raise ZeroDivisionError
+
+
+def test_storage_breakdown_percent_is_share_of_total_points(qdrant):
+    import uuid
+
+    from qdrant_client.models import PointStruct
+
+    qdrant.upsert(
+        collection_name="rag_chunks",
+        points=[PointStruct(id=str(uuid.uuid4()), vector=[0.0] * 384, payload={}) for _ in range(3)],
+        wait=True,
+    )
+    qdrant.upsert(
+        collection_name="user_memories",
+        points=[PointStruct(id=str(uuid.uuid4()), vector=[0.0] * 384, payload={})],
+        wait=True,
+    )
+
+    rows = queries.storage_breakdown(qdrant)
+
+    by_collection = {r["collection"]: r for r in rows}
+    assert by_collection["rag_chunks"]["percent"] == 75.0
+    assert by_collection["user_memories"]["percent"] == 25.0
+    assert by_collection["rag_documents"]["percent"] == 0.0
 
 
 def test_project_breakdown_empty_when_no_repos(graph_store):
