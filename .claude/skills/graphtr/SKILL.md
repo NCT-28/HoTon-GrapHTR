@@ -34,9 +34,9 @@ If `graphtr-out/graph.json` exists and the question is about codebase structure 
 ("what calls X", "how does Y connect to Z", "explain W"), query it directly — do not rebuild.
 
 ```bash
-python3 graphtr-out/query.py query "<keyword>"      # keyword BFS, depth 2
-python3 graphtr-out/query.py path "<from>" "<to>"    # shortest path between two symbols
-python3 graphtr-out/query.py explain "<name>"        # node + direct neighbors
+python3 scripts/query.py --out-dir graphtr-out query "<keyword>"      # keyword BFS, depth 2
+python3 scripts/query.py --out-dir graphtr-out path "<from>" "<to>"    # shortest path between two symbols
+python3 scripts/query.py --out-dir graphtr-out explain "<name>"        # node + direct neighbors
 ```
 
 Pure stdlib, no MCP round trip, no network. If `graph.json` looks stale or the script errors,
@@ -49,18 +49,27 @@ load (CDN-hosted vis-network, like graphify-out/graph.html).
 
 ## Bootstrap — graphtr-out/ doesn't exist yet
 
-1. **Ingest**: `mcp__hoton-graphtr__ingest_codebase(user_id, source="/data/code-repos/<repo>")` →
-   returns `repo_id`. hoton-graphtr runs in Docker (`docker-hoton-graphtr-1`) and only sees paths under
-   its `code-repos` bind mount — if the repo isn't there yet, copy/rsync it in first (exclude
-   `.git`, `node_modules`, `target`, build output). The call can take a while and may time out at
-   the MCP layer on a big repo; ingestion keeps running server-side regardless — check
-   `docker logs docker-hoton-graphtr-1` for progress, and read `repo_id` back from Neo4j if the
-   response didn't arrive.
+1. **Ingest**: `mcp__hoton-graphtr__ingest_codebase(user_id, source="<repo path>")` → returns
+   `repo_id`. `source` is a plain local path or git URL (`app/graph/repo_source.py` resolves it
+   directly) — where that path needs to point depends on how the hoton-graphtr server you're
+   talking to is deployed:
+   - **Zero-service (`DEPLOY_MODE=local`, e.g. installed via `install.sh`)**: the server runs as a
+     plain `uvicorn` process on the host, no container boundary — pass the repo's actual host path
+     (e.g. `/Users/you/projects/<repo>`) straight through.
+   - **Docker (`docker compose -f docker/docker-compose.yml up`)**: hoton-graphtr only sees paths
+     under its `code-repos` bind mount (`docker-hoton-graphtr-1` container) — if the repo isn't
+     there yet, copy/rsync it in first (exclude `.git`, `node_modules`, `target`, build output),
+     then pass the in-container path (`/data/code-repos/<repo>`).
+
+   The call can take a while and may time out at the MCP layer on a big repo; ingestion keeps
+   running server-side regardless — check server logs for progress (`docker logs
+   docker-hoton-graphtr-1` for the Docker deploy, or the `install.sh`-started log file for
+   zero-service), and read `repo_id` back from Neo4j if the response didn't arrive.
 2. **Export**: `mcp__hoton-graphtr__export_graph_snapshot(user_id, repo_id)` → returns
    `{repo_id, node_count, edge_count, node_kinds, edge_types, nodes, edges}`.
 3. **Write**: `graphtr-out/graph.json` (`{nodes, edges}`) and `graphtr-out/manifest.json`
    (`repo_id`, `user_id`, counts, `node_kinds`, `edge_types`, `exported_at`).
-4. **Build viewer**: `python3 graphtr-out/build_viewer.py` → generates `graphtr-out/graphtr.html`
+4. **Build viewer**: `python3 scripts/build_viewer.py --out-dir graphtr-out` → generates `graphtr-out/graphtr.html`
    (under a second — layout runs live in the browser via vis-network, not precomputed).
 
 ## Refresh — code changed since last ingest
@@ -88,7 +97,7 @@ watcher has something new to pick up — then:
    again before assuming the watcher is broken and reaching for `ingest_codebase` — a premature
    re-ingest is what creates the duplicate-watcher problem above.
 3. Overwrite `graphtr-out/graph.json` / `manifest.json` with the result.
-4. `python3 graphtr-out/build_viewer.py`.
+4. `python3 scripts/build_viewer.py --out-dir graphtr-out`.
 
 Only re-run full Bootstrap (with a fresh `ingest_codebase` call) if the repo_id/watcher was lost
 entirely (e.g. container restarted without persistent state) — and if you do, check
@@ -109,18 +118,20 @@ Not run automatically by Bootstrap/Refresh above.
 
 | Need | How |
 |---|---|
-| Keyword search | `query.py query "<kw>"` |
-| Path between two symbols | `query.py path "<a>" "<b>"` |
-| Node + neighbors | `query.py explain "<name>"` |
+| Keyword search | `scripts/query.py --out-dir graphtr-out query "<kw>"` |
+| Path between two symbols | `scripts/query.py --out-dir graphtr-out path "<a>" "<b>"` |
+| Node + neighbors | `scripts/query.py --out-dir graphtr-out explain "<name>"` |
 | Visual browse | open `graphtr-out/graphtr.html` |
 | Stats overview | read `graphtr-out/manifest.json` |
 | repo_id / user_id | `graphtr-out/manifest.json` |
-| Regenerate viewer only (graph.json unchanged) | `python3 graphtr-out/build_viewer.py` |
+| Regenerate viewer only (graph.json unchanged) | `python3 scripts/build_viewer.py --out-dir graphtr-out` |
 
 ## Common mistakes
 
-- Calling `mcp__hoton-graphtr__ingest_codebase` with a host path (`/Users/...`) — the server only
-  sees its Docker mount (`/data/code-repos/...`). Copy the repo into the mount first.
+- Calling `mcp__hoton-graphtr__ingest_codebase` with a host path (`/Users/...`) when the server is
+  the **Docker** deploy — it only sees its bind mount (`/data/code-repos/...`); copy the repo into
+  the mount first. Not an issue for the zero-service deploy (`DEPLOY_MODE=local`) — that server
+  runs on the host, so a host path works directly.
 - Re-running the whole Bootstrap pipeline for a single query — if `graphtr-out/graph.json`
   already exists, query it directly instead.
 - Using a different `user_id` per call — ingest/export/query must share the same one, or the

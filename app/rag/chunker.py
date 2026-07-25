@@ -1,4 +1,4 @@
-"""Recursive character text splitter — ported from hoton-lmr/src/rag/chunker.rs."""
+"""Recursive character text splitter."""
 
 DEFAULT_CHUNK_SIZE = 1800
 DEFAULT_OVERLAP = 180

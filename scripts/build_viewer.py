@@ -7,7 +7,7 @@ color+size encode kind/degree. Node/edge positions are computed live by
 vis-network's physics engine in the browser — this script only shapes the data.
 
 Usage:
-  python3 graphtr-out/build_viewer.py
+  python3 scripts/build_viewer.py --out-dir graphtr-out
 
 Pass --out-dir <dir> to build a graphtr.html for a graph.json living
 somewhere other than this script's own directory (e.g. a shared copy of this

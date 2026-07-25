@@ -126,7 +126,7 @@ If this project has a `graphtr-out/` directory, it's a local snapshot of the hot
 MCP server's code graph for this repo (see the `graphtr` skill for the full workflow).
 
 Rules:
-- For codebase questions, first run `python3 graphtr-out/query.py query "<keyword>"` when graphtr-out/graph.json exists. Use `graphtr-out/query.py path "<A>" "<B>"` for relationships and `graphtr-out/query.py explain "<name>"` for a node + its neighbors. These return a scoped subgraph, usually much smaller than raw grep output.
+- For codebase questions, first run `python3 scripts/query.py --out-dir graphtr-out query "<keyword>"` when graphtr-out/graph.json exists. Use `scripts/query.py --out-dir graphtr-out path "<A>" "<B>"` for relationships and `scripts/query.py --out-dir graphtr-out explain "<name>"` for a node + its neighbors. These return a scoped subgraph, usually much smaller than raw grep output.
 - If the script errors or the graph looks stale, fall back to `mcp__hoton-graphtr__query_code_graph` with the `user_id`/`repo_id` from `graphtr-out/manifest.json`.
 - Open `graphtr-out/graphtr.html` in a browser for a visual, interactive view.
 - Refreshing the graph after code changes is a re-export from hoton-graphtr, not a local rebuild — see the `graphtr` skill's Refresh flow; do not call `ingest_codebase` again (it mints a new `repo_id` and creates a duplicate graph).

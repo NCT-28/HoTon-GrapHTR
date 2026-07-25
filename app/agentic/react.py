@@ -1,5 +1,4 @@
-"""Multi-step ReAct planning: bounded retrieve/decide loop for complex queries.
-Mirrors hoton-lmr's tool_loop.rs MAX_TOOL_CALLS pattern."""
+"""Multi-step ReAct planning: bounded retrieve/decide loop for complex queries."""
 
 import json
 import uuid

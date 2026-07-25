@@ -4,7 +4,7 @@ can adopt the same hoton-graphtr-backed code-graph + knowledge-base workflow
 this repo (HoTon-GrapHTR, hoton-graphtr's own source repo) provides. Copies:
   - .claude/skills/graphtr/            -> <target>/.claude/skills/graphtr/
     (SKILL.md query/build_viewer commands rewritten to invoke this repo's own
-    graphtr-out/query.py and build_viewer.py via --out-dir <target>/graphtr-out
+    scripts/query.py and scripts/build_viewer.py via --out-dir <target>/graphtr-out
     -- the target does NOT get its own copy of these scripts, so there is one
     canonical version shared by every project, at the cost of the target
     depending on this repo's checkout still existing at THIS_REPO_ROOT.)
@@ -46,16 +46,17 @@ _TARGET_SCRIPTS_PREFIX = ".claude/skills/graphtr-knowledge/scripts/"
 
 
 def _rewrite_graphtr_skill_paths(text: str) -> str:
-    """This repo's own graphtr SKILL.md invokes graphtr-out/query.py and
-    graphtr-out/build_viewer.py in place (no --out-dir needed: the script and
-    the graph.json it reads live in the same directory). A target project has
-    no copy of these scripts at all -- point commands at the shared copy in
-    THIS_REPO_ROOT instead, with --out-dir telling it to read/write the
-    target's own graphtr-out/ rather than THIS_REPO_ROOT's."""
-    query_py = THIS_REPO_ROOT / "graphtr-out" / "query.py"
-    build_viewer_py = THIS_REPO_ROOT / "graphtr-out" / "build_viewer.py"
-    text = text.replace("graphtr-out/query.py", f"{query_py} --out-dir graphtr-out")
-    text = text.replace("graphtr-out/build_viewer.py", f"{build_viewer_py} --out-dir graphtr-out")
+    """This repo's own graphtr SKILL.md already invokes scripts/query.py and
+    scripts/build_viewer.py with --out-dir graphtr-out (scripts live in
+    THIS_REPO_ROOT/scripts/, separate from the graphtr-out/ data dir). A
+    target project has no copy of these scripts at all -- point commands at
+    the shared copy in THIS_REPO_ROOT instead; the --out-dir graphtr-out
+    already in the text resolves relative to the target's own cwd, so it's
+    left untouched."""
+    query_py = THIS_REPO_ROOT / "scripts" / "query.py"
+    build_viewer_py = THIS_REPO_ROOT / "scripts" / "build_viewer.py"
+    text = text.replace("scripts/query.py", str(query_py))
+    text = text.replace("scripts/build_viewer.py", str(build_viewer_py))
     return text
 
 

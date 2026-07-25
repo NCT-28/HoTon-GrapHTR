@@ -1,4 +1,4 @@
-"""User profile management — ported from hoton-lmr/src/rag/profile.rs."""
+"""User profile management."""
 
 import datetime
 import uuid

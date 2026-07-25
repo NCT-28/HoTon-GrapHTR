@@ -1,4 +1,4 @@
-"""Document ingest — ported from hoton-lmr/src/rag/documents.rs (upload/extract/chunk/embed/store)."""
+"""Document ingest (upload/extract/chunk/embed/store)."""
 
 import ipaddress
 import socket

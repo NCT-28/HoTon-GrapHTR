@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from build_knowledge_skeleton import _find_repo_root, extract_section
+from build_knowledge_skeleton import _find_repo_root, extract_section, extract_first_section
 
 SAMPLE = """# Title
 
@@ -38,6 +38,16 @@ def test_extract_section_includes_subsections():
     assert "Database" not in result
 
 
+def test_extract_first_section_falls_back_to_later_heading():
+    result = extract_first_section(SAMPLE, ["## Nope", "## Service Map"])
+    assert "| A | B |" in result
+
+
+def test_extract_first_section_no_match_returns_empty():
+    result = extract_first_section(SAMPLE, ["## Nope", "## Also Nope"])
+    assert result == ""
+
+
 def test_find_repo_root_walks_up_to_git_marker():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -62,6 +72,8 @@ if __name__ == "__main__":
     test_extract_section_stops_at_sibling_heading()
     test_extract_section_missing_heading_returns_empty()
     test_extract_section_includes_subsections()
+    test_extract_first_section_falls_back_to_later_heading()
+    test_extract_first_section_no_match_returns_empty()
     test_find_repo_root_walks_up_to_git_marker()
     test_find_repo_root_raises_without_git_marker()
     print("PASS")

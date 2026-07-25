@@ -1,4 +1,4 @@
-"""Chunk retrieval — ported from hoton-lmr/src/rag/retrieval.rs::retrieve_chunks."""
+"""Chunk retrieval."""
 
 import datetime
 import uuid

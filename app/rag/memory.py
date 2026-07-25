@@ -1,4 +1,4 @@
-"""Memory extraction, classification, and storage — ported from hoton-lmr/src/rag/memory.rs."""
+"""Memory extraction, classification, and storage."""
 
 import json
 from dataclasses import dataclass

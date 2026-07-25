@@ -32,7 +32,7 @@ def test_process_uploaded_file_markdown():
 
 def test_process_uploaded_file_plain_text():
     # content_type=None (not "text/plain") is required to reach the plain-passthrough branch —
-    # matches hoton-lmr/src/rag/documents.rs's exact routing: ct.starts_with("text/plain") always
+    # matches the original Rust implementation's exact routing: ct.starts_with("text/plain") always
     # routes through markdown extraction first, so a browser-set "text/plain" content-type never
     # reaches the .txt branch. Pre-existing quirk in the source being ported, not introduced here.
     title, text = process_uploaded_file("notes.txt", None, b"raw content here")

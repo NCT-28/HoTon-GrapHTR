@@ -76,8 +76,8 @@ bash uninstall.sh -y           # same, no prompt
 bash uninstall.sh --purge-env  # also delete .env
 ```
 
-Never touches the git checkout itself, or `graphtr-out/`'s tracked tooling
-(`build_viewer.py`, `query.py`) — only the files `install.sh` generates.
+Never touches the git checkout itself, or the tracked pipeline tooling in
+`scripts/` (`build_viewer.py`, `query.py`) — only the files `install.sh` generates.
 
 Or manually:
 

@@ -41,7 +41,16 @@ GRAPH_PATH = REPO_ROOT / "graphtr-out" / "graph.json"
 OUT_DIR = REPO_ROOT / "graphtr-out" / "knowledge"
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 
-SERVICES = ["hoton-lmr", "hoton-lmt", "hoton-lmu", "hoton-browser", "hoton-graphtr"]
+def extract_first_section(text: str, headings: list[str]) -> str:
+    """Try each heading in order, return the first section that's non-empty.
+    CLAUDE.md's actual section names vary per repo (e.g. `## Service Map` in
+    a monorepo vs plain `## Architecture` here) -- no single hardcoded heading
+    works everywhere, so try likely candidates instead of just one."""
+    for heading in headings:
+        section = extract_section(text, heading)
+        if section:
+            return section
+    return ""
 
 
 def extract_section(text: str, heading: str) -> str:
@@ -89,24 +98,39 @@ def _requirements_deps(path: Path) -> str:
     return ", ".join(f"`{n}`" for n in names[:8])
 
 
+MANIFEST_KINDS = [
+    ("Cargo.toml", "Rust", _cargo_deps),
+    ("package.json", "TypeScript/JS", _package_json_deps),
+    ("requirements.txt", "Python", _requirements_deps),
+]
+
+
+def _discover_service_dirs() -> list[Path]:
+    """This script is bundled into other projects via init_graphtr_skills.py,
+    so it can't hardcode service names for one specific repo. A repo is
+    either single-service (manifest at REPO_ROOT) or a monorepo of sibling
+    service dirs (manifest one level down) -- detect which generically by
+    manifest presence instead."""
+    if any((REPO_ROOT / name).exists() for name, _, _ in MANIFEST_KINDS):
+        return [REPO_ROOT]
+    return sorted(
+        d for d in REPO_ROOT.iterdir()
+        if d.is_dir() and any((d / name).exists() for name, _, _ in MANIFEST_KINDS)
+    )
+
+
+def _service_label(svc_dir: Path) -> str:
+    return svc_dir.name if svc_dir != REPO_ROOT else REPO_ROOT.name
+
+
 def detect_stack() -> str:
     rows = ["| Service | Language | Manifest | Key deps |", "|---|---|---|---|"]
-    for svc in SERVICES:
-        svc_dir = REPO_ROOT / svc
-        if not svc_dir.is_dir():
-            continue
-        cargo = svc_dir / "Cargo.toml"
-        pkg = svc_dir / "package.json"
-        req = svc_dir / "requirements.txt"
-        if cargo.exists():
-            lang, manifest, deps = "Rust", "Cargo.toml", _cargo_deps(cargo)
-        elif pkg.exists():
-            lang, manifest, deps = "TypeScript/JS", "package.json", _package_json_deps(pkg)
-        elif req.exists():
-            lang, manifest, deps = "Python", "requirements.txt", _requirements_deps(req)
-        else:
-            continue
-        rows.append(f"| `{svc}` | {lang} | `{manifest}` | {deps} |")
+    for svc_dir in _discover_service_dirs():
+        for manifest_name, lang, extractor in MANIFEST_KINDS:
+            manifest = svc_dir / manifest_name
+            if manifest.exists():
+                rows.append(f"| `{_service_label(svc_dir)}` | {lang} | `{manifest_name}` | {extractor(manifest)} |")
+                break
     return "\n".join(rows)
 
 
@@ -127,28 +151,32 @@ def detect_structure() -> str:
 
 def detect_testing() -> str:
     lines = []
-    if (REPO_ROOT / "hoton-lmr" / "Cargo.toml").exists():
-        lines.append("- `hoton-lmr`: `cargo test` (single test: `cargo test <test_name>`)")
-    pkg_path = REPO_ROOT / "hoton-lmu" / "package.json"
-    if pkg_path.exists():
-        scripts = json.loads(pkg_path.read_text()).get("scripts", {})
-        for name in ("lint", "typecheck", "test"):
-            if name in scripts:
-                lines.append(f"- `hoton-lmu`: `npm run {name}` -> `{scripts[name]}`")
-    for svc in ("hoton-lmt", "hoton-graphtr"):
-        tests_dir = REPO_ROOT / svc / "tests"
+    for svc_dir in _discover_service_dirs():
+        label = _service_label(svc_dir)
+        if (svc_dir / "Cargo.toml").exists():
+            lines.append(f"- `{label}`: `cargo test` (single test: `cargo test <test_name>`)")
+        pkg_path = svc_dir / "package.json"
+        if pkg_path.exists():
+            scripts = json.loads(pkg_path.read_text()).get("scripts", {})
+            for name in ("lint", "typecheck", "test"):
+                if name in scripts:
+                    lines.append(f"- `{label}`: `npm run {name}` -> `{scripts[name]}`")
+        tests_dir = svc_dir / "tests"
         if tests_dir.is_dir():
             count = len(list(tests_dir.glob("test_*.py")))
-            lines.append(f"- `{svc}`: pytest, {count} test file(s) under `{svc}/tests/`")
+            rel = "tests/" if svc_dir == REPO_ROOT else f"{label}/tests/"
+            lines.append(f"- `{label}`: pytest, {count} test file(s) under `{rel}`")
     return "\n".join(lines) if lines else "_no test tooling detected_"
 
 
 def detect_conventions() -> str:
     lines = []
-    if (REPO_ROOT / "hoton-lmu" / "biome.json").exists():
-        lines.append("- `hoton-lmu`: Biome (`biome.json`) -- run `npm run biome:check` / `npm run biome:fix`")
-    if (REPO_ROOT / "hoton-lmr" / "rustfmt.toml").exists():
-        lines.append("- `hoton-lmr`: `rustfmt.toml` present")
+    for svc_dir in _discover_service_dirs():
+        label = _service_label(svc_dir)
+        if (svc_dir / "biome.json").exists():
+            lines.append(f"- `{label}`: Biome (`biome.json`) -- run `npm run biome:check` / `npm run biome:fix`")
+        if (svc_dir / "rustfmt.toml").exists():
+            lines.append(f"- `{label}`: `rustfmt.toml` present")
     return "\n".join(lines) if lines else "_no lint/format config detected_"
 
 
@@ -210,10 +238,10 @@ def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     claude_md = CLAUDE_MD.read_text()
     facts = {
-        "architecture": extract_section(claude_md, "## Service Map"),
+        "architecture": extract_first_section(claude_md, ["## Service Map", "## Architecture"]),
         "concerns": "",
         "conventions": detect_conventions(),
-        "integrations": extract_section(claude_md, "### External integrations"),
+        "integrations": extract_first_section(claude_md, ["### External integrations", "## Integrations"]),
         "stack": detect_stack(),
         "structure": detect_structure(),
         "testing": detect_testing(),

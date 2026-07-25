@@ -149,7 +149,7 @@ if [ "$ORIGINAL_PWD" != "$REPO_ROOT" ]; then
   GRAPHTR_OUT_DIR="$ORIGINAL_PWD/graphtr-out"
   if [ -f "$GRAPHTR_OUT_DIR/graph.json" ]; then
     echo "Building graphtr viewer for $ORIGINAL_PWD..."
-    "$PYTHON_BIN" "$REPO_ROOT/graphtr-out/build_viewer.py" --out-dir "$GRAPHTR_OUT_DIR" || \
+    "$PYTHON_BIN" "$REPO_ROOT/scripts/build_viewer.py" --out-dir "$GRAPHTR_OUT_DIR" || \
       echo "Warning: build_viewer.py failed for $GRAPHTR_OUT_DIR" >&2
   fi
 

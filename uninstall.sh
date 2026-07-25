@@ -8,8 +8,8 @@
 #
 # Only ever touches files install.sh creates: .venv/, graphtr-out/graph.sqlite,
 # graphtr-out/usage.sqlite, graphtr-out/qdrant/, and (with --purge-env) .env.
-# graphtr-out/ itself is NOT removed -- it also holds tracked tooling
-# (build_viewer.py, query.py) unrelated to zero-service mode. The git
+# graphtr-out/ itself is NOT removed -- generated data only, no tracked files
+# live there anymore (the pipeline scripts live in scripts/). The git
 # checkout itself is never touched.
 set -euo pipefail
 

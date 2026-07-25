@@ -1,4 +1,4 @@
-"""Memory TTL pruning — ported from hoton-lmr/src/rag/cleanup.rs."""
+"""Memory TTL pruning."""
 
 import asyncio
 import datetime

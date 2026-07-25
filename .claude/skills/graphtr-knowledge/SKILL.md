@@ -52,7 +52,7 @@ Claude turns to fill in narrative, so it's a manual, occasional step, invoked on
 
    | Topic | Read before writing |
    |---|---|
-   | `architecture.md` | `CLAUDE.md` `## Architecture` section; `python3 graphtr-out/query.py explain <key module>` for actual call graph |
+   | `architecture.md` | `CLAUDE.md` `## Architecture` section; `python3 scripts/query.py --out-dir graphtr-out explain <key module>` for actual call graph |
    | `concerns.md` | `.claude/skills/graphtr/SKILL.md` (watcher latency, `ingest_codebase` re-mint gotcha); `CLAUDE.md` (deprecated `graphify`, `sd-server` model-family limit) — no auto-filled facts, narrative only |
    | `conventions.md` | `CLAUDE.md` (Biome not Prettier); `git log --oneline -20` for commit style; check for `rustfmt.toml`/`biome.json` presence |
    | `integrations.md` | `CLAUDE.md` `### External integrations` + `### Environment variables` sections |
