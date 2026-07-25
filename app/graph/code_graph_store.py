@@ -452,6 +452,25 @@ class SqliteGraphStore(GraphStore):
             self._conn.execute(f"DELETE FROM mentions_edges WHERE target IN {placeholders}", ids)
         self._conn.execute("DELETE FROM repos WHERE user_id = ? AND repo_id = ?", (user_id, repo_id))
 
+    def _delete_files_unlocked(self, user_id: str, repo_id: str, file_paths: list[str]) -> None:
+        if not file_paths:
+            return
+        file_placeholders = _in_clause(len(file_paths))
+        ids = [
+            row["id"] for row in self._conn.execute(
+                f"SELECT id FROM code_symbols WHERE user_id = ? AND repo_id = ? AND file_path IN {file_placeholders}",
+                [user_id, repo_id] + file_paths,
+            ).fetchall()
+        ]
+        if not ids:
+            return
+        id_placeholders = _in_clause(len(ids))
+        self._conn.execute(f"DELETE FROM code_symbols WHERE id IN {id_placeholders}", ids)
+        self._conn.execute(
+            f"DELETE FROM code_edges WHERE source IN {id_placeholders} OR target IN {id_placeholders}", ids + ids
+        )
+        self._conn.execute(f"DELETE FROM mentions_edges WHERE target IN {id_placeholders}", ids)
+
     # --- GraphStore interface ---
 
     def upsert_repo(self, repo: dict) -> None:
@@ -473,6 +492,15 @@ class SqliteGraphStore(GraphStore):
     def replace_repo_graph(self, repo: dict, symbols: list[dict], edges: list[dict]) -> None:
         with self._lock, self._conn:
             self._delete_repo_unlocked(repo["user_id"], repo["repo_id"])
+            self._upsert_repo_unlocked(repo)
+            self._upsert_symbols_unlocked(symbols)
+            self._upsert_code_edges_unlocked(edges)
+
+    def replace_files_in_repo(
+        self, repo: dict, stale_file_paths: list[str], symbols: list[dict], edges: list[dict]
+    ) -> None:
+        with self._lock, self._conn:
+            self._delete_files_unlocked(repo["user_id"], repo["repo_id"], stale_file_paths)
             self._upsert_repo_unlocked(repo)
             self._upsert_symbols_unlocked(symbols)
             self._upsert_code_edges_unlocked(edges)

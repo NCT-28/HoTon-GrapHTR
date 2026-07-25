@@ -126,6 +126,76 @@ def test_sqlite_replace_repo_graph_rolls_back_entirely_on_invalid_edge_type(sqli
     assert [n["name"] for n in nodes] == ["old_fn"]
 
 
+def test_sqlite_replace_files_in_repo_only_touches_symbols_in_stale_file_paths(sqlite_store):
+    sqlite_store.upsert_repo({"user_id": "u1", "repo_id": "r1", "source": "/tmp/r1",
+                               "local_path": "/tmp/r1", "last_indexed_at": "t0"})
+    sqlite_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python",
+         "content_hash": "hash-a"},
+        {"id": "b", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "bar",
+         "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python",
+         "content_hash": "hash-b"},
+    ])
+    sqlite_store.upsert_code_edges([{"source": "a", "target": "b", "type": "CALLS"}])
+
+    sqlite_store.replace_files_in_repo(
+        {"user_id": "u1", "repo_id": "r1", "source": "/tmp/r1", "local_path": "/tmp/r1", "last_indexed_at": "t1"},
+        ["a.py"],
+        [{"id": "a2", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo_renamed",
+          "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python",
+          "content_hash": "hash-a2"}],
+        [],
+    )
+
+    nodes, edges = sqlite_store.get_subgraph("u1", "r1")
+    by_name = {n["name"]: n for n in nodes}
+    assert "foo" not in by_name  # old a.py symbol gone
+    assert by_name["foo_renamed"]["content_hash"] == "hash-a2"
+    assert by_name["bar"]["content_hash"] == "hash-b"  # untouched b.py symbol keeps its content_hash
+    assert edges == []  # the CALLS edge referencing the deleted "a" id is gone too
+    assert sqlite_store.get_repo("u1", "r1")["last_indexed_at"] == "t1"
+
+
+def test_sqlite_replace_files_in_repo_with_no_symbols_just_deletes_stale_files(sqlite_store):
+    sqlite_store.upsert_repo({"user_id": "u1", "repo_id": "r1", "source": "/tmp/r1",
+                               "local_path": "/tmp/r1", "last_indexed_at": "t0"})
+    sqlite_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "h"},
+    ])
+
+    sqlite_store.replace_files_in_repo(
+        {"user_id": "u1", "repo_id": "r1", "source": "/tmp/r1", "local_path": "/tmp/r1", "last_indexed_at": "t1"},
+        ["a.py"], [], [],
+    )
+
+    nodes, _ = sqlite_store.get_subgraph("u1", "r1")
+    assert nodes == []
+
+
+def test_sqlite_content_hash_column_migrates_on_pre_existing_db(tmp_path):
+    import sqlite3
+
+    db_path = str(tmp_path / "old.sqlite")
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE code_symbols (id TEXT PRIMARY KEY, repo_id TEXT, user_id TEXT, kind TEXT, "
+        "name TEXT, file_path TEXT, start_line INTEGER, end_line INTEGER, language TEXT)"
+    )
+    conn.commit()
+    conn.close()
+
+    store = SqliteGraphStore(db_path)  # must not raise
+
+    store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python", "content_hash": "h"},
+    ])
+    nodes, _ = store.get_subgraph("u1", "r1")
+    assert nodes[0]["content_hash"] == "h"
+
+
 def test_get_graph_store_returns_local_multi_repo_store_in_local_deploy_mode(tmp_path, monkeypatch):
     from app.config import get_settings
     from app.graph.code_graph_store import LocalMultiRepoGraphStore, get_graph_store
