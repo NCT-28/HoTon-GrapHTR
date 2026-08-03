@@ -251,3 +251,31 @@ def test_project_breakdown_does_not_materialize_the_graph(graph_store):
         {"repo_id": "r1", "node_count": 2, "edge_count": 1, "last_indexed_at": "now"}
     ]
     assert calls["get_subgraph"] == 0
+
+
+class _Point:
+    def __init__(self, user_id):
+        self.payload = {"user_id": user_id}
+
+
+def test_count_by_user_id_follows_the_scroll_cursor():
+    # The old implementation passed limit=10000 and dropped the returned cursor,
+    # so anything past the first page was silently uncounted.
+    class _PagedClient:
+        def __init__(self):
+            self.pages = [
+                ([_Point("u1"), _Point("u1")], "cursor-1"),
+                ([_Point("u2")], None),
+            ]
+            self.offsets_seen = []
+
+        def scroll(self, collection_name, limit, with_payload, offset=None):
+            self.offsets_seen.append(offset)
+            return self.pages.pop(0)
+
+    client = _PagedClient()
+
+    counts = queries._count_by_user_id(client, "rag_documents")
+
+    assert counts == {"u1": 2, "u2": 1}
+    assert client.offsets_seen == [None, "cursor-1"]

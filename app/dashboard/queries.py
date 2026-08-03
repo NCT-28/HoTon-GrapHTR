@@ -77,16 +77,24 @@ def route_usage(usage_store, hours: int = 24) -> list[dict]:
 
 
 def _count_by_user_id(client, collection: str) -> dict[str, int]:
+    # Follows the scroll cursor to the end. The previous single limit=10000 call
+    # dropped the returned offset, so a collection larger than one page produced
+    # silently wrong counts rather than slow ones.
     counts: dict[str, int] = {}
+    offset = None
     try:
-        points, _ = client.scroll(collection_name=collection, limit=10000, with_payload=["user_id"])
+        while True:
+            points, offset = client.scroll(
+                collection_name=collection, limit=1000, with_payload=["user_id"], offset=offset
+            )
+            for p in points:
+                uid = p.payload.get("user_id")
+                if uid:
+                    counts[uid] = counts.get(uid, 0) + 1
+            if offset is None:
+                return counts
     except Exception:
         return counts
-    for p in points:
-        uid = p.payload.get("user_id")
-        if uid:
-            counts[uid] = counts.get(uid, 0) + 1
-    return counts
 
 
 def user_breakdown(client, usage_store, hours: int = 24) -> list[dict]:
