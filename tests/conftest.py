@@ -96,6 +96,11 @@ class FakeGraphStore(GraphStore):
             if s["user_id"] == user_id and s["repo_id"] == repo_id
         ]
 
+    def count_subgraph(self, user_id: str, repo_id: str) -> tuple[int, int]:
+        # In-memory, so delegating keeps the fake trivially consistent with get_subgraph.
+        nodes, edges = self.get_subgraph(user_id, repo_id)
+        return len(nodes), len(edges)
+
     def ping(self) -> bool:
         return True
 

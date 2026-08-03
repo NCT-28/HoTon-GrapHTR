@@ -142,3 +142,21 @@ def test_neo4j_list_symbol_index_returns_identity_and_diff_fields(neo4j_store):
     assert rows == [
         {"id": "int-x", "name": "foo", "kind": "function", "file_path": "a.py", "content_hash": "h1"}
     ]
+
+
+def test_neo4j_count_subgraph_matches_get_subgraph_lengths(neo4j_store):
+    neo4j_store.replace_repo_graph(
+        {"user_id": "test-u-cnt", "repo_id": "test-r-cnt", "source": "s",
+         "local_path": "/tmp/test-r-cnt", "last_indexed_at": "now"},
+        [{"id": "int-c1", "user_id": "test-u-cnt", "repo_id": "test-r-cnt", "kind": "function",
+          "name": "foo", "file_path": "a.py", "start_line": 1, "end_line": 2,
+          "language": "python", "content_hash": "h1"},
+         {"id": "int-c2", "user_id": "test-u-cnt", "repo_id": "test-r-cnt", "kind": "function",
+          "name": "bar", "file_path": "b.py", "start_line": 1, "end_line": 2,
+          "language": "python", "content_hash": "h2"}],
+        [{"source": "int-c1", "target": "int-c2", "type": "CALLS"}],
+    )
+
+    nodes, edges = neo4j_store.get_subgraph("test-u-cnt", "test-r-cnt")
+
+    assert neo4j_store.count_subgraph("test-u-cnt", "test-r-cnt") == (len(nodes), len(edges))

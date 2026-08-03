@@ -72,6 +72,14 @@ class GraphStore(ABC):
         ...
 
     @abstractmethod
+    def count_subgraph(self, user_id: str, repo_id: str) -> tuple[int, int]:
+        """(node_count, edge_count) equal to len() of this same backend's get_subgraph
+        result, computed with aggregates instead of materializing the graph. Backends
+        differ on whether an unbacked MENTIONS edge yields an edge -- each implementation
+        must match its own get_subgraph, not the other's."""
+        ...
+
+    @abstractmethod
     def ping(self) -> bool: ...
 
     # --- Phase 2: text entities + cross-link ---
@@ -318,6 +326,35 @@ class Neo4jGraphStore(GraphStore):
             user_id=user_id, repo_id=repo_id,
         )
         return [dict(record) for record in records]
+
+    def count_subgraph(self, user_id: str, repo_id: str) -> tuple[int, int]:
+        # Three aggregate queries mirroring get_subgraph's two match patterns -- counts
+        # come back as scalars, no node or relationship rows cross the wire. Note this
+        # backend's get_subgraph only emits a MENTIONS edge when a real TextEntity
+        # matched, so edges and entities both come from the same pattern here.
+        symbol_records, _, _ = self._driver.execute_query(
+            "MATCH (n:CodeSymbol {user_id: $user_id, repo_id: $repo_id}) RETURN count(n) AS c",
+            user_id=user_id, repo_id=repo_id,
+        )
+        edge_records, _, _ = self._driver.execute_query(
+            """
+            MATCH (:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
+                  -[r]->(:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
+            RETURN count(r) AS c
+            """,
+            user_id=user_id, repo_id=repo_id,
+        )
+        mention_records, _, _ = self._driver.execute_query(
+            """
+            MATCH (te:TextEntity {user_id: $user_id})
+                  -[m:MENTIONS]->(:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
+            RETURN count(m) AS edges, count(DISTINCT te) AS entities
+            """,
+            user_id=user_id, repo_id=repo_id,
+        )
+        node_count = symbol_records[0]["c"] + mention_records[0]["entities"]
+        edge_count = edge_records[0]["c"] + mention_records[0]["edges"]
+        return node_count, edge_count
 
     def ping(self) -> bool:
         self._driver.execute_query("RETURN 1")
@@ -660,6 +697,57 @@ class SqliteGraphStore(GraphStore):
             ).fetchall()
         return [row["id"] for row in rows]
 
+    def count_subgraph(self, user_id: str, repo_id: str) -> tuple[int, int]:
+        # Mirrors this class's get_subgraph exactly, including its asymmetry: a
+        # mentions_edges row whose source has no text_entities row still contributes
+        # an edge but not a node -- hence the unjoined edge count and the joined
+        # distinct-entity count.
+        scope = "(SELECT id FROM code_symbols WHERE user_id = ? AND repo_id = ?)"
+        with self._lock:
+            symbol_count = self._conn.execute(
+                "SELECT COUNT(*) FROM code_symbols WHERE user_id = ? AND repo_id = ?",
+                (user_id, repo_id),
+            ).fetchone()[0]
+            if not symbol_count:
+                return 0, 0
+            code_edge_count = self._conn.execute(
+                f"SELECT COUNT(*) FROM code_edges WHERE source IN {scope} AND target IN {scope}",
+                (user_id, repo_id, user_id, repo_id),
+            ).fetchone()[0]
+            mention_edge_count = self._conn.execute(
+                f"SELECT COUNT(*) FROM mentions_edges WHERE target IN {scope}", (user_id, repo_id)
+            ).fetchone()[0]
+            entity_count = self._conn.execute(
+                f"SELECT COUNT(DISTINCT te.id) FROM mentions_edges m "
+                f"JOIN text_entities te ON te.id = m.source WHERE m.target IN {scope}",
+                (user_id, repo_id),
+            ).fetchone()[0]
+        return symbol_count + entity_count, code_edge_count + mention_edge_count
+
+    def count_mentioning_text_entities(self, symbol_ids: list[str]) -> tuple[int, int]:
+        """(distinct text-entity count, MENTIONS edge count) targeting any of `symbol_ids`.
+        Counting counterpart to get_mentioning_text_entities, for LocalMultiRepoGraphStore's
+        count_subgraph -- same chunked IN-list, no row materialization. Matches
+        get_mentioning_text_entities' asymmetry: every mentions_edges row is an edge,
+        only entity-backed sources are nodes."""
+        if not symbol_ids:
+            return 0, 0
+        entity_ids: set[str] = set()
+        edge_count = 0
+        with self._lock:
+            for chunk in _chunked(symbol_ids):
+                placeholders = _in_clause(len(chunk))
+                edge_count += self._conn.execute(
+                    f"SELECT COUNT(*) FROM mentions_edges WHERE target IN {placeholders}", chunk
+                ).fetchone()[0]
+                rows = self._conn.execute(
+                    f"SELECT DISTINCT m.source AS source FROM mentions_edges m "
+                    f"JOIN text_entities te ON te.id = m.source WHERE m.target IN {placeholders}",
+                    chunk,
+                ).fetchall()
+                entity_ids.update(row["source"] for row in rows)
+        return len(entity_ids), edge_count
+
     def ping(self) -> bool:
         with self._lock:
             self._conn.execute("SELECT 1")
@@ -855,6 +943,20 @@ class LocalMultiRepoGraphStore(GraphStore):
         if repo is None:
             return []
         return self._repo_store(repo["local_path"]).list_symbol_index(user_id, repo_id)
+
+    def count_subgraph(self, user_id: str, repo_id: str) -> tuple[int, int]:
+        # Symbols and code edges are counted in the per-repo store; text entities and
+        # MENTIONS edges live in the central store and can only be matched by symbol id,
+        # so the ids do have to cross (list_symbol_ids keeps that to one column, and
+        # count_mentioning_text_entities chunks the IN-list).
+        repo = self._central.get_repo(user_id, repo_id)
+        if repo is None:
+            return 0, 0
+        repo_store = self._repo_store(repo["local_path"])
+        symbol_count, code_edge_count = repo_store.count_subgraph(user_id, repo_id)
+        symbol_ids = repo_store.list_symbol_ids(user_id, repo_id)
+        entity_count, mention_edge_count = self._central.count_mentioning_text_entities(symbol_ids)
+        return symbol_count + entity_count, code_edge_count + mention_edge_count
 
     def ping(self) -> bool:
         return self._central.ping()

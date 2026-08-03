@@ -191,3 +191,39 @@ def test_local_multi_repo_list_symbol_index_empty_for_unknown_repo(tmp_path):
     store = LocalMultiRepoGraphStore(str(tmp_path / "central" / "graph.sqlite"))
 
     assert store.list_symbol_index("u1", "nope") == []
+
+
+def test_local_multi_repo_count_subgraph_matches_get_subgraph_lengths(tmp_path):
+    from app.graph.code_graph_store import LocalMultiRepoGraphStore
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    store = LocalMultiRepoGraphStore(str(tmp_path / "central" / "graph.sqlite"))
+    store.replace_repo_graph(
+        {"user_id": "u1", "repo_id": "r1", "source": str(repo_dir),
+         "local_path": str(repo_dir), "last_indexed_at": "now"},
+        [{"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+          "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python",
+          "content_hash": "h1"},
+         {"id": "b", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "bar",
+          "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python",
+          "content_hash": "h2"}],
+        [{"source": "a", "target": "b", "type": "CALLS"}],
+    )
+    store.upsert_text_entities([
+        {"id": "te1", "user_id": "u1", "name": "Thing", "entity_type": "concept",
+         "source_doc_id": "d1", "source_memory_id": None},
+    ])
+    store.upsert_mentions_edges([{"source": "te1", "target": "a"}])
+
+    nodes, edges = store.get_subgraph("u1", "r1")
+
+    assert store.count_subgraph("u1", "r1") == (len(nodes), len(edges))
+
+
+def test_local_multi_repo_count_subgraph_zero_for_unknown_repo(tmp_path):
+    from app.graph.code_graph_store import LocalMultiRepoGraphStore
+
+    store = LocalMultiRepoGraphStore(str(tmp_path / "central" / "graph.sqlite"))
+
+    assert store.count_subgraph("u1", "nope") == (0, 0)

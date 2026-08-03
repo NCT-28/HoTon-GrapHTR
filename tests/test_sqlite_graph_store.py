@@ -364,3 +364,44 @@ def test_sqlite_list_symbol_index_excludes_text_entities(sqlite_store):
     rows = sqlite_store.list_symbol_index("u1", "r1")
 
     assert [r["id"] for r in rows] == ["a"]
+
+
+def test_sqlite_count_subgraph_matches_get_subgraph_lengths(sqlite_store):
+    sqlite_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python",
+         "content_hash": "h1"},
+        {"id": "b", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "bar",
+         "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python",
+         "content_hash": "h2"},
+    ])
+    sqlite_store.upsert_code_edges([{"source": "a", "target": "b", "type": "CALLS"}])
+    sqlite_store.upsert_text_entities([
+        {"id": "te1", "user_id": "u1", "name": "Thing", "entity_type": "concept",
+         "source_doc_id": "d1", "source_memory_id": None},
+    ])
+    sqlite_store.upsert_mentions_edges([{"source": "te1", "target": "a"}])
+
+    nodes, edges = sqlite_store.get_subgraph("u1", "r1")
+
+    assert sqlite_store.count_subgraph("u1", "r1") == (len(nodes), len(edges))
+
+
+def test_sqlite_count_subgraph_matches_get_subgraph_for_orphan_mentions_edge(sqlite_store):
+    # get_subgraph emits a MENTIONS edge even when no text_entities row backs its
+    # source, but no node -- the counts have to reproduce that asymmetry exactly.
+    sqlite_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python",
+         "content_hash": "h1"},
+    ])
+    sqlite_store.upsert_mentions_edges([{"source": "ghost", "target": "a"}])
+
+    nodes, edges = sqlite_store.get_subgraph("u1", "r1")
+
+    assert (len(nodes), len(edges)) == (1, 1)
+    assert sqlite_store.count_subgraph("u1", "r1") == (1, 1)
+
+
+def test_sqlite_count_subgraph_empty_repo(sqlite_store):
+    assert sqlite_store.count_subgraph("u1", "nope") == (0, 0)
