@@ -81,3 +81,13 @@ def test_settings_reads_deploy_mode_env(monkeypatch):
     settings = Settings()
     assert settings.deploy_mode == "local"
     assert settings.local_data_dir == "/tmp/graphtr-data"
+
+
+def test_settings_reasoning_model_idle_unload_default(monkeypatch):
+    monkeypatch.delenv("REASONING_MODEL_IDLE_UNLOAD_SECONDS", raising=False)
+
+    settings = Settings()
+
+    # 300s made a bursty-but-interactive MCP session pay a full model reload
+    # (under the generation lock) between question batches.
+    assert settings.reasoning_model_idle_unload_seconds == 1800

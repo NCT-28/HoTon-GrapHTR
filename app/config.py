@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     embed_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     embed_dim: int = 384
     reasoning_model_name: str = "Qwen/Qwen2.5-1.5B-Instruct"
-    reasoning_model_idle_unload_seconds: int = 300  # auto-unload reasoning model after this long unused
+    # Auto-unload the reasoning model after this long unused. Reloading costs a full
+    # multi-GB pipeline() init while holding ReasoningLLM's generation lock, so this
+    # wants to be longer than a typical gap between question batches in one session.
+    reasoning_model_idle_unload_seconds: int = 1800
     searxng_url: str = "http://localhost:8888"
     browser_service_url: str = "http://localhost:8090"
     rag_port: int = 8030
