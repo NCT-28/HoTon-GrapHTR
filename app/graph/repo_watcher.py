@@ -210,10 +210,11 @@ class RepoWatcherManager:
                 repo_id, list(existing_paths)
             )
 
-            baseline_nodes, _ = self._graph_store.get_subgraph(user_id, repo_id)
-            # get_subgraph also returns mentioning TextEntity nodes, which have no
-            # file_path -- only CodeSymbol-shaped nodes matter for the index/diff below.
-            code_baseline_nodes = [n for n in baseline_nodes if "file_path" in n]
+            # Narrow read: get_subgraph would pull every symbol row, every edge (all
+            # discarded here), and joined text entities, just to diff one changed file.
+            # list_symbol_index returns exactly the id/name/kind/file_path/content_hash
+            # the diff and resolve_edges below need, and never includes TextEntity nodes.
+            code_baseline_nodes = self._graph_store.list_symbol_index(user_id, repo_id)
             stale_file_paths = existing_paths | deleted_paths
             kept_baseline = [n for n in code_baseline_nodes if n["file_path"] not in stale_file_paths]
             stale_baseline_by_id = {n["id"]: n for n in code_baseline_nodes if n["file_path"] in stale_file_paths}

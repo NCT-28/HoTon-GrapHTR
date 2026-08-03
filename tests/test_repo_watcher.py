@@ -345,3 +345,34 @@ def test_watch_reindexes_only_the_saved_file_end_to_end(tmp_path, graph_store, q
 
     manager.stop()
     assert found, "watcher did not settle on the expected post-reindex state within the timeout"
+
+
+def test_reindex_paths_does_not_load_the_full_subgraph(tmp_path, graph_store, qdrant):
+    # get_subgraph pulls every symbol row, every edge, and joined text entities.
+    # Diffing one changed file only needs the narrow symbol index.
+    (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+    (tmp_path / "b.py").write_text("def bar():\n    pass\n")
+
+    manager = RepoWatcherManager(graph_store, qdrant_client=qdrant, embedder=_FakeEmbedder())
+    manager.reindex("u1", "r1", str(tmp_path))
+
+    calls = {"get_subgraph": 0, "list_symbol_index": 0}
+    real_get_subgraph = graph_store.get_subgraph
+    real_list_symbol_index = graph_store.list_symbol_index
+
+    def counting_get_subgraph(user_id, repo_id):
+        calls["get_subgraph"] += 1
+        return real_get_subgraph(user_id, repo_id)
+
+    def counting_list_symbol_index(user_id, repo_id):
+        calls["list_symbol_index"] += 1
+        return real_list_symbol_index(user_id, repo_id)
+
+    graph_store.get_subgraph = counting_get_subgraph
+    graph_store.list_symbol_index = counting_list_symbol_index
+
+    (tmp_path / "a.py").write_text("def foo():\n    return 1\n")
+    manager.reindex_paths("u1", "r1", str(tmp_path), {str(tmp_path / "a.py")}, set())
+
+    assert calls["get_subgraph"] == 0
+    assert calls["list_symbol_index"] == 1
