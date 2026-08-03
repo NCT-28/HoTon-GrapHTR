@@ -215,3 +215,31 @@ def test_get_graph_store_returns_local_multi_repo_store_in_local_deploy_mode(tmp
 
     get_graph_store.cache_clear()
     get_settings.cache_clear()
+
+
+def test_sqlite_schema_indexes_code_edges_target(sqlite_store):
+    # code_edges' UNIQUE (source, target, type) index can serve `source IN (...)`
+    # but not `target IN (...)` -- the delete paths filter on both.
+    rows = sqlite_store._conn.execute("PRAGMA index_list('code_edges')").fetchall()
+    assert "code_edges_target_idx" in {row["name"] for row in rows}
+
+
+def test_sqlite_code_edges_target_index_backfills_on_pre_existing_db(tmp_path):
+    import sqlite3
+
+    from app.graph.code_graph_store import SqliteGraphStore
+
+    db_path = str(tmp_path / "old.sqlite")
+    # A db created before code_edges_target_idx existed: the table is there, the index isn't.
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE code_edges (source TEXT NOT NULL, target TEXT NOT NULL, "
+        "type TEXT NOT NULL, UNIQUE (source, target, type))"
+    )
+    conn.commit()
+    conn.close()
+
+    store = SqliteGraphStore(db_path)
+
+    rows = store._conn.execute("PRAGMA index_list('code_edges')").fetchall()
+    assert "code_edges_target_idx" in {row["name"] for row in rows}

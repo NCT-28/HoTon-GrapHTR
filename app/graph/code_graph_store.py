@@ -409,6 +409,7 @@ class SqliteGraphStore(GraphStore):
                     type TEXT NOT NULL,
                     UNIQUE (source, target, type)
                 );
+                CREATE INDEX IF NOT EXISTS code_edges_target_idx ON code_edges (target);
                 CREATE TABLE IF NOT EXISTS text_entities (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
