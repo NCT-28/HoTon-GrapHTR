@@ -364,6 +364,16 @@ def _in_clause(count: int) -> str:
     return "(" + ",".join("?" * count) + ")"
 
 
+def _chunked(items: list[str], size: int = 900):
+    """Yield `items` in batches small enough to bind as SQL parameters. Used only
+    where the ids come from another database (LocalMultiRepoGraphStore's per-repo
+    stores) and so can't be expressed as a correlated subquery. The real ceiling is
+    a compile-time constant that varies by build (999 before SQLite 3.32, 32766 by
+    default after, higher in some distributions), so 900 stays under all of them."""
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
+
+
 class SqliteGraphStore(GraphStore):
     """File-backed GraphStore for DEPLOY_MODE=local. No Cypher-equivalent
     traversal is needed here: BFS/shortest-path/explain already run in Python
@@ -489,38 +499,39 @@ class SqliteGraphStore(GraphStore):
         )
 
     def _delete_repo_unlocked(self, user_id: str, repo_id: str) -> None:
-        ids = [
-            row["id"] for row in self._conn.execute(
-                "SELECT id FROM code_symbols WHERE user_id = ? AND repo_id = ?", (user_id, repo_id)
-            ).fetchall()
-        ]
+        # Edge deletes run BEFORE the symbol delete: they name the symbols via a
+        # correlated subquery, so the rows have to still be there. Constant
+        # parameter count regardless of repo size (was one param per symbol id,
+        # which eventually blew past SQLITE_LIMIT_VARIABLE_NUMBER). The
+        # source/target predicates are separate statements rather than one OR'd
+        # statement so each can use an index (see code_edges_target_idx).
+        scope = "(SELECT id FROM code_symbols WHERE user_id = ? AND repo_id = ?)"
+        self._conn.execute(f"DELETE FROM code_edges WHERE source IN {scope}", (user_id, repo_id))
+        self._conn.execute(f"DELETE FROM code_edges WHERE target IN {scope}", (user_id, repo_id))
+        self._conn.execute(f"DELETE FROM mentions_edges WHERE target IN {scope}", (user_id, repo_id))
         self._conn.execute("DELETE FROM code_symbols WHERE user_id = ? AND repo_id = ?", (user_id, repo_id))
-        if ids:
-            placeholders = _in_clause(len(ids))
-            self._conn.execute(
-                f"DELETE FROM code_edges WHERE source IN {placeholders} OR target IN {placeholders}", ids + ids
-            )
-            self._conn.execute(f"DELETE FROM mentions_edges WHERE target IN {placeholders}", ids)
         self._conn.execute("DELETE FROM repos WHERE user_id = ? AND repo_id = ?", (user_id, repo_id))
 
     def _delete_files_unlocked(self, user_id: str, repo_id: str, file_paths: list[str]) -> None:
         if not file_paths:
             return
+        # Same edges-before-symbols ordering and correlated-subquery scoping as
+        # _delete_repo_unlocked, narrowed to the stale files. Parameter count is
+        # 2 + len(file_paths) -- bounded by one debounce window's changed files,
+        # not by repo size.
         file_placeholders = _in_clause(len(file_paths))
-        ids = [
-            row["id"] for row in self._conn.execute(
-                f"SELECT id FROM code_symbols WHERE user_id = ? AND repo_id = ? AND file_path IN {file_placeholders}",
-                [user_id, repo_id] + file_paths,
-            ).fetchall()
-        ]
-        if not ids:
-            return
-        id_placeholders = _in_clause(len(ids))
-        self._conn.execute(f"DELETE FROM code_symbols WHERE id IN {id_placeholders}", ids)
-        self._conn.execute(
-            f"DELETE FROM code_edges WHERE source IN {id_placeholders} OR target IN {id_placeholders}", ids + ids
+        scope = (
+            f"(SELECT id FROM code_symbols WHERE user_id = ? AND repo_id = ? "
+            f"AND file_path IN {file_placeholders})"
         )
-        self._conn.execute(f"DELETE FROM mentions_edges WHERE target IN {id_placeholders}", ids)
+        scope_params = [user_id, repo_id] + file_paths
+        self._conn.execute(f"DELETE FROM code_edges WHERE source IN {scope}", scope_params)
+        self._conn.execute(f"DELETE FROM code_edges WHERE target IN {scope}", scope_params)
+        self._conn.execute(f"DELETE FROM mentions_edges WHERE target IN {scope}", scope_params)
+        self._conn.execute(
+            f"DELETE FROM code_symbols WHERE user_id = ? AND repo_id = ? AND file_path IN {file_placeholders}",
+            scope_params,
+        )
 
     # --- GraphStore interface ---
 
@@ -573,6 +584,10 @@ class SqliteGraphStore(GraphStore):
         return [dict(row) for row in rows]
 
     def get_subgraph(self, user_id: str, repo_id: str) -> tuple[list[dict], list[dict]]:
+        # Every id-list predicate here is a correlated subquery rather than an
+        # IN (?,?,...) over the repo's symbol ids -- the parameter count is
+        # constant instead of scaling with repo size.
+        scope = "(SELECT id FROM code_symbols WHERE user_id = ? AND repo_id = ?)"
         with self._lock:
             symbol_rows = self._conn.execute(
                 "SELECT id, repo_id, user_id, kind, name, file_path, start_line, end_line, language, content_hash "
@@ -580,28 +595,26 @@ class SqliteGraphStore(GraphStore):
                 (user_id, repo_id),
             ).fetchall()
             nodes_by_id: dict[str, dict] = {row["id"]: dict(row) for row in symbol_rows}
-            ids = list(nodes_by_id.keys())
 
             edges: list[dict] = []
-            if ids:
-                placeholders = _in_clause(len(ids))
+            if nodes_by_id:
                 code_edge_rows = self._conn.execute(
                     f"SELECT source, target, type FROM code_edges "
-                    f"WHERE source IN {placeholders} AND target IN {placeholders}",
-                    ids + ids,
+                    f"WHERE source IN {scope} AND target IN {scope}",
+                    (user_id, repo_id, user_id, repo_id),
                 ).fetchall()
                 edges.extend(dict(row) for row in code_edge_rows)
 
                 mention_rows = self._conn.execute(
-                    f"SELECT source, target FROM mentions_edges WHERE target IN {placeholders}", ids
+                    f"SELECT source, target FROM mentions_edges WHERE target IN {scope}",
+                    (user_id, repo_id),
                 ).fetchall()
-                mention_source_ids = [row["source"] for row in mention_rows]
-                if mention_source_ids:
-                    te_placeholders = _in_clause(len(mention_source_ids))
+                if mention_rows:
                     te_rows = self._conn.execute(
                         f"SELECT id, user_id, name, entity_type, source_doc_id, source_memory_id "
-                        f"FROM text_entities WHERE id IN {te_placeholders}",
-                        mention_source_ids,
+                        f"FROM text_entities "
+                        f"WHERE id IN (SELECT source FROM mentions_edges WHERE target IN {scope})",
+                        (user_id, repo_id),
                     ).fetchall()
                     for row in te_rows:
                         nodes_by_id[row["id"]] = dict(row)
@@ -618,26 +631,34 @@ class SqliteGraphStore(GraphStore):
     def get_mentioning_text_entities(self, symbol_ids: list[str]) -> tuple[list[dict], list[dict]]:
         """Text-entity nodes and MENTIONS edges targeting any of `symbol_ids`. Used by
         LocalMultiRepoGraphStore to fuse this (central) store's text entities onto code
-        symbols that live in a separate per-repo store's get_subgraph() result."""
+        symbols that live in a separate per-repo store's get_subgraph() result.
+
+        `symbol_ids` comes from a different database, so it can't be a correlated
+        subquery like the rest of this class -- it's chunked instead to keep the bound
+        parameter count under SQLITE_LIMIT_VARIABLE_NUMBER."""
         if not symbol_ids:
             return [], []
+        mention_rows: list[dict] = []
+        entities_by_id: dict[str, dict] = {}
         with self._lock:
-            placeholders = _in_clause(len(symbol_ids))
-            mention_rows = self._conn.execute(
-                f"SELECT source, target FROM mentions_edges WHERE target IN {placeholders}", symbol_ids
-            ).fetchall()
-            mention_source_ids = [row["source"] for row in mention_rows]
-            entity_nodes: list[dict] = []
-            if mention_source_ids:
-                te_placeholders = _in_clause(len(mention_source_ids))
+            for chunk in _chunked(symbol_ids):
+                placeholders = _in_clause(len(chunk))
+                rows = self._conn.execute(
+                    f"SELECT source, target FROM mentions_edges WHERE target IN {placeholders}", chunk
+                ).fetchall()
+                mention_rows.extend({"source": r["source"], "target": r["target"]} for r in rows)
+            source_ids = list({r["source"] for r in mention_rows})
+            for chunk in _chunked(source_ids):
+                placeholders = _in_clause(len(chunk))
                 te_rows = self._conn.execute(
                     f"SELECT id, user_id, name, entity_type, source_doc_id, source_memory_id "
-                    f"FROM text_entities WHERE id IN {te_placeholders}",
-                    mention_source_ids,
+                    f"FROM text_entities WHERE id IN {placeholders}",
+                    chunk,
                 ).fetchall()
-                entity_nodes = [dict(row) for row in te_rows]
-        edges = [{"source": row["source"], "target": row["target"], "type": "MENTIONS"} for row in mention_rows]
-        return entity_nodes, edges
+                for row in te_rows:
+                    entities_by_id[row["id"]] = dict(row)
+        edges = [{"source": r["source"], "target": r["target"], "type": "MENTIONS"} for r in mention_rows]
+        return list(entities_by_id.values()), edges
 
     def upsert_text_entities(self, entities: list[dict]) -> None:
         if not entities:

@@ -243,3 +243,88 @@ def test_sqlite_code_edges_target_index_backfills_on_pre_existing_db(tmp_path):
 
     rows = store._conn.execute("PRAGMA index_list('code_edges')").fetchall()
     assert "code_edges_target_idx" in {row["name"] for row in rows}
+
+
+
+def _many_symbols(count: int, user_id: str = "u1", repo_id: str = "r1") -> list[dict]:
+    return [
+        {"id": f"s{i}", "user_id": user_id, "repo_id": repo_id, "kind": "function",
+         "name": f"fn{i}", "file_path": f"f{i}.py", "start_line": 1, "end_line": 2,
+         "language": "python", "content_hash": f"h{i}"}
+        for i in range(count)
+    ]
+
+
+def _clamp_sql_variables(store, limit: int) -> None:
+    """Force this connection's SQL-variable ceiling down.
+
+    The real ceiling is a compile-time constant that varies by build -- 999 before
+    SQLite 3.32, 32766 by default after it, and 250000 in some distributions
+    (including the interpreter these tests usually run under). Asserting against a
+    fixed symbol count would therefore test the build, not the code. Clamping the
+    limit instead tests the property that actually matters: no query may bind a
+    number of parameters that grows with the repo's symbol count.
+    """
+    import sqlite3
+
+    store._conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, limit)
+
+
+def test_sqlite_get_subgraph_does_not_bind_a_parameter_per_symbol(sqlite_store):
+    sqlite_store.upsert_symbols(_many_symbols(500))
+    _clamp_sql_variables(sqlite_store, 50)
+
+    nodes, edges = sqlite_store.get_subgraph("u1", "r1")
+
+    assert len(nodes) == 500
+    assert edges == []
+
+
+def test_sqlite_delete_repo_does_not_bind_a_parameter_per_symbol(sqlite_store):
+    sqlite_store.upsert_symbols(_many_symbols(500))
+    sqlite_store.upsert_code_edges([{"source": "s0", "target": "s1", "type": "CALLS"}])
+    _clamp_sql_variables(sqlite_store, 50)
+
+    sqlite_store.delete_repo("u1", "r1")
+
+    assert sqlite_store.get_subgraph("u1", "r1") == ([], [])
+    assert sqlite_store._conn.execute("SELECT COUNT(*) FROM code_edges").fetchone()[0] == 0
+
+
+def test_sqlite_replace_files_in_repo_does_not_bind_a_parameter_per_symbol(sqlite_store):
+    sqlite_store.upsert_symbols(_many_symbols(500))
+    _clamp_sql_variables(sqlite_store, 50)
+
+    sqlite_store.replace_files_in_repo(
+        {"user_id": "u1", "repo_id": "r1", "source": "s", "local_path": "/tmp/r1",
+         "last_indexed_at": "now"},
+        ["f0.py"],
+        [{"id": "s0", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "fn0",
+          "file_path": "f0.py", "start_line": 1, "end_line": 9, "language": "python",
+          "content_hash": "new"}],
+        [],
+    )
+
+    nodes, _ = sqlite_store.get_subgraph("u1", "r1")
+    assert len(nodes) == 500
+    assert next(n for n in nodes if n["id"] == "s0")["content_hash"] == "new"
+
+
+def test_sqlite_get_mentioning_text_entities_chunks_its_id_list(sqlite_store):
+    # This one takes its ids from another database (LocalMultiRepoGraphStore's
+    # per-repo store), so it can't use a correlated subquery -- it must chunk.
+    # Clamped to 999 rather than the 50 the subquery paths use: 999 is the
+    # tightest ceiling any real build ships (pre-SQLite-3.32), and _chunked's
+    # batch size is sized to stay under exactly that.
+    sqlite_store.upsert_symbols(_many_symbols(2000))
+    sqlite_store.upsert_text_entities([
+        {"id": "te1", "user_id": "u1", "name": "Thing", "entity_type": "concept",
+         "source_doc_id": "d1", "source_memory_id": None},
+    ])
+    sqlite_store.upsert_mentions_edges([{"source": "te1", "target": "s1999"}])
+    _clamp_sql_variables(sqlite_store, 999)
+
+    entities, edges = sqlite_store.get_mentioning_text_entities([f"s{i}" for i in range(2000)])
+
+    assert [e["id"] for e in entities] == ["te1"]
+    assert edges == [{"source": "te1", "target": "s1999", "type": "MENTIONS"}]
