@@ -49,11 +49,14 @@ def project_breakdown(graph_store) -> list[dict]:
         return []
     result = []
     for repo in graph_store.list_repos():
-        nodes, edges = graph_store.get_subgraph(repo["user_id"], repo["repo_id"])
+        # count_subgraph, not get_subgraph: this endpoint only needs two integers, and
+        # get_subgraph would pull every node and edge of every repo of every user into
+        # Python to compute them.
+        node_count, edge_count = graph_store.count_subgraph(repo["user_id"], repo["repo_id"])
         result.append({
             "repo_id": repo["repo_id"],
-            "node_count": len(nodes),
-            "edge_count": len(edges),
+            "node_count": node_count,
+            "edge_count": edge_count,
             "last_indexed_at": repo.get("last_indexed_at"),
         })
     return result

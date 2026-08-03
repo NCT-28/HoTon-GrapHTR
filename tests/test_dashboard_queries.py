@@ -217,3 +217,37 @@ def test_user_breakdown_combines_usage_and_qdrant_counts(qdrant, usage_store):
 
 def test_user_breakdown_empty_when_usage_store_is_none(qdrant):
     assert queries.user_breakdown(qdrant, None) == []
+
+
+def test_project_breakdown_does_not_materialize_the_graph(graph_store):
+    graph_store.upsert_repo({
+        "user_id": "u1", "repo_id": "r1", "source": "s",
+        "local_path": "/tmp/r1", "last_indexed_at": "now",
+    })
+    graph_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python"},
+        {"id": "b", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "bar",
+         "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python"},
+    ])
+    graph_store.upsert_code_edges([{"source": "a", "target": "b", "type": "CALLS"}])
+
+    calls = {"get_subgraph": 0}
+    real_get_subgraph = graph_store.get_subgraph
+
+    def counting_get_subgraph(user_id, repo_id):
+        calls["get_subgraph"] += 1
+        return real_get_subgraph(user_id, repo_id)
+
+    graph_store.get_subgraph = counting_get_subgraph
+    # FakeGraphStore.count_subgraph delegates to self.get_subgraph, which would pick
+    # up the instance attribute set on the line above and make the counter fire even
+    # on the fixed code. Stub it so the assertion measures project_breakdown only.
+    graph_store.count_subgraph = lambda user_id, repo_id: (2, 1)
+
+    result = queries.project_breakdown(graph_store)
+
+    assert result == [
+        {"repo_id": "r1", "node_count": 2, "edge_count": 1, "last_indexed_at": "now"}
+    ]
+    assert calls["get_subgraph"] == 0
