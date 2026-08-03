@@ -1,8 +1,10 @@
 """GET /dashboard (HTML page) and GET /api/dashboard/summary (JSON), both
-behind HTTP Basic Auth. Fails OPEN: if DASHBOARD_USER/DASHBOARD_PASSWORD are
-unset, both routes serve unauthenticated rather than returning 503. Only set
-one of the two blank if you're intentionally exposing this on a trusted
-network -- both routes return usage stats, health, and per-user breakdown."""
+behind HTTP Basic Auth. Fails CLOSED: if DASHBOARD_USER/DASHBOARD_PASSWORD are
+unset, both routes return 503 rather than serving unauthenticated. Both
+credentials default to empty and docker/.env.example ships them blank, so
+failing open would expose usage stats, health (including backend error text),
+every repo across every user, and the per-user breakdown on any default
+install -- install.sh binds uvicorn to 0.0.0.0."""
 
 import secrets
 from pathlib import Path
@@ -22,7 +24,14 @@ def _require_auth(credentials: HTTPBasicCredentials | None = Depends(_security))
     settings = get_settings()
     dashboard_password = settings.dashboard_password.get_secret_value()
     if not settings.dashboard_user or not dashboard_password:
-        return
+        # Fail CLOSED. Both settings default to empty and docker/.env.example ships
+        # them blank, so failing open meant a default install served usage stats,
+        # per-user breakdowns, every repo across every user, and backend error text
+        # to anything that could reach the port.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="dashboard auth not configured: set DASHBOARD_USER and DASHBOARD_PASSWORD",
+        )
     if credentials is None or not (
         secrets.compare_digest(credentials.username, settings.dashboard_user)
         and secrets.compare_digest(credentials.password, dashboard_password)

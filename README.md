@@ -23,6 +23,13 @@ pip install -r requirements.txt
 
 Configure `.env` (see `docker/.env.example` for all variables): Qdrant/Neo4j/Postgres connection info, embedding/reasoning model names, SearXNG/browser service URLs, dashboard credentials.
 
+`DASHBOARD_USER` and `DASHBOARD_PASSWORD` are required for the dashboard to
+serve. `install.sh` copies `docker/.env.example` with both blank, so `/dashboard`
+and `/api/dashboard/summary` return `503 dashboard auth not configured` until you
+set them in `.env` and restart. This is deliberate: `install.sh` binds uvicorn to
+`0.0.0.0:8030`, and the summary endpoint exposes per-user ids and counts, every
+ingested repo across every user, and backend health error text.
+
 ## Run
 
 ### Docker (recommended)

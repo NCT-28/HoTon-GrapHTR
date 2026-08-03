@@ -215,9 +215,10 @@ in-memory `QdrantClient(":memory:")` fixture for the pattern to follow.
   and a background expiry job (`cleanup.py`).
 - `dashboard/` — usage tracking (`tracker.py`, `usage_store.py`), health
   (`health.py`), aggregate queries (`queries.py`), and the router. Dashboard
-  auth (`router.py`) is HTTP Basic and **fails open**: if
-  `dashboard_user`/`dashboard_password` are unset, dashboard routes serve
-  unauthenticated rather than 503 — deliberate, not an oversight.
+  auth (`router.py`) is HTTP Basic and **fails closed**: if
+  `dashboard_user`/`dashboard_password` are unset, dashboard routes return
+  503. Both default to empty and `docker/.env.example` ships them blank, so
+  a fresh install must set them before the dashboard will serve.
 
 **MCP tool surface (`app/mcp_server.py`):** `build_tool_context()` bundles all
 the same dependencies into a `ToolContext` dataclass; `build_mcp_server()`

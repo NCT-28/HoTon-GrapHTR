@@ -43,7 +43,7 @@ def test_dashboard_accepts_correct_credentials(qdrant, graph_store, usage_store,
     assert "text/html" in resp.headers["content-type"]
 
 
-def test_dashboard_serves_unauthenticated_when_auth_env_unset(qdrant, graph_store, usage_store, monkeypatch):
+def test_dashboard_returns_503_when_auth_env_unset(qdrant, graph_store, usage_store, monkeypatch):
     monkeypatch.delenv("DASHBOARD_USER", raising=False)
     monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
     from app.config import get_settings
@@ -60,7 +60,32 @@ def test_dashboard_serves_unauthenticated_when_auth_env_unset(qdrant, graph_stor
     client = TestClient(app)
 
     resp = client.get("/dashboard")
-    assert resp.status_code == 200
+    assert resp.status_code == 503
+
+    # The JSON summary is the sensitive one -- per-user ids and counts, every repo
+    # across every user, and backend error text. It must be closed too.
+    resp = client.get("/api/dashboard/summary")
+    assert resp.status_code == 503
+
+
+def test_dashboard_returns_503_when_only_user_is_set(qdrant, graph_store, usage_store, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_USER", "admin")
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    from app.config import get_settings
+    get_settings.cache_clear()
+
+    from app.dashboard.router import build_dashboard_router
+
+    app = FastAPI()
+    router = build_dashboard_router(
+        get_client=lambda: qdrant, get_graph_store=lambda: graph_store,
+        get_usage_store=lambda: usage_store, get_embedder=lambda: _Embedder(),
+    )
+    app.include_router(router)
+    client = TestClient(app)
+
+    resp = client.get("/dashboard", auth=("admin", ""))
+    assert resp.status_code == 503
 
 
 def test_summary_endpoint_returns_all_six_sections(qdrant, graph_store, usage_store, monkeypatch):
