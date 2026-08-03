@@ -161,3 +161,33 @@ def test_replace_files_in_repo_routes_to_the_right_repo_store_and_leaves_others_
     assert [n["name"] for n in r1_nodes] == ["foo_renamed"]
     r2_nodes, _ = store.get_subgraph("u1", "r2")
     assert [n["name"] for n in r2_nodes] == ["bar"]  # repo2 untouched
+
+
+def test_local_multi_repo_list_symbol_index_reads_the_per_repo_store(tmp_path):
+    from app.graph.code_graph_store import LocalMultiRepoGraphStore
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    store = LocalMultiRepoGraphStore(str(tmp_path / "central" / "graph.sqlite"))
+    store.replace_repo_graph(
+        {"user_id": "u1", "repo_id": "r1", "source": str(repo_dir),
+         "local_path": str(repo_dir), "last_indexed_at": "now"},
+        [{"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+          "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python",
+          "content_hash": "h1"}],
+        [],
+    )
+
+    rows = store.list_symbol_index("u1", "r1")
+
+    assert rows == [
+        {"id": "a", "name": "foo", "kind": "function", "file_path": "a.py", "content_hash": "h1"}
+    ]
+
+
+def test_local_multi_repo_list_symbol_index_empty_for_unknown_repo(tmp_path):
+    from app.graph.code_graph_store import LocalMultiRepoGraphStore
+
+    store = LocalMultiRepoGraphStore(str(tmp_path / "central" / "graph.sqlite"))
+
+    assert store.list_symbol_index("u1", "nope") == []

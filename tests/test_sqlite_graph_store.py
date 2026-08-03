@@ -328,3 +328,39 @@ def test_sqlite_get_mentioning_text_entities_chunks_its_id_list(sqlite_store):
 
     assert [e["id"] for e in entities] == ["te1"]
     assert edges == [{"source": "te1", "target": "s1999", "type": "MENTIONS"}]
+
+
+def test_sqlite_list_symbol_index_returns_identity_and_diff_fields_only(sqlite_store):
+    sqlite_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python",
+         "content_hash": "h1"},
+        {"id": "b", "user_id": "u1", "repo_id": "r2", "kind": "function", "name": "bar",
+         "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python",
+         "content_hash": "h2"},
+    ])
+
+    rows = sqlite_store.list_symbol_index("u1", "r1")
+
+    assert rows == [
+        {"id": "a", "name": "foo", "kind": "function", "file_path": "a.py", "content_hash": "h1"}
+    ]
+
+
+def test_sqlite_list_symbol_index_excludes_text_entities(sqlite_store):
+    # get_subgraph mixes in mentioning TextEntity nodes (no file_path); the reindex
+    # path had to filter those out by hand. list_symbol_index never returns them.
+    sqlite_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "foo",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python",
+         "content_hash": "h1"},
+    ])
+    sqlite_store.upsert_text_entities([
+        {"id": "te1", "user_id": "u1", "name": "Thing", "entity_type": "concept",
+         "source_doc_id": "d1", "source_memory_id": None},
+    ])
+    sqlite_store.upsert_mentions_edges([{"source": "te1", "target": "a"}])
+
+    rows = sqlite_store.list_symbol_index("u1", "r1")
+
+    assert [r["id"] for r in rows] == ["a"]

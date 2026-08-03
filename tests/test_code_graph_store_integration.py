@@ -125,3 +125,20 @@ def test_replace_files_in_repo_only_touches_symbols_in_stale_file_paths_through_
     assert by_name["foo_renamed"]["content_hash"] == "hash-a2"
     assert by_name["bar"]["content_hash"] == "hash-b"
     assert edges == []
+
+
+def test_neo4j_list_symbol_index_returns_identity_and_diff_fields(neo4j_store):
+    neo4j_store.replace_repo_graph(
+        {"user_id": "test-u-idx", "repo_id": "test-r-idx", "source": "s",
+         "local_path": "/tmp/test-r-idx", "last_indexed_at": "now"},
+        [{"id": "int-x", "user_id": "test-u-idx", "repo_id": "test-r-idx", "kind": "function",
+          "name": "foo", "file_path": "a.py", "start_line": 1, "end_line": 2,
+          "language": "python", "content_hash": "h1"}],
+        [],
+    )
+
+    rows = neo4j_store.list_symbol_index("test-u-idx", "test-r-idx")
+
+    assert rows == [
+        {"id": "int-x", "name": "foo", "kind": "function", "file_path": "a.py", "content_hash": "h1"}
+    ]

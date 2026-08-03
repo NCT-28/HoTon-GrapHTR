@@ -64,6 +64,14 @@ class GraphStore(ABC):
     def get_subgraph(self, user_id: str, repo_id: str) -> tuple[list[dict], list[dict]]: ...
 
     @abstractmethod
+    def list_symbol_index(self, user_id: str, repo_id: str) -> list[dict]:
+        """One dict per CodeSymbol in the repo with exactly id/name/kind/file_path/
+        content_hash -- the identity and change-detection fields, nothing else.
+        Incremental reindex needs only these, so it shouldn't pay for get_subgraph's
+        edges, mentioning text entities, and full symbol rows."""
+        ...
+
+    @abstractmethod
     def ping(self) -> bool: ...
 
     # --- Phase 2: text entities + cross-link ---
@@ -299,6 +307,17 @@ class Neo4jGraphStore(GraphStore):
                 nodes_by_id[te["id"]] = te
                 edges.append({"source": te["id"], "target": n["id"], "type": "MENTIONS"})
         return list(nodes_by_id.values()), edges
+
+    def list_symbol_index(self, user_id: str, repo_id: str) -> list[dict]:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (n:CodeSymbol {user_id: $user_id, repo_id: $repo_id})
+            RETURN n.id AS id, n.name AS name, n.kind AS kind,
+                   n.file_path AS file_path, n.content_hash AS content_hash
+            """,
+            user_id=user_id, repo_id=repo_id,
+        )
+        return [dict(record) for record in records]
 
     def ping(self) -> bool:
         self._driver.execute_query("RETURN 1")
@@ -623,6 +642,24 @@ class SqliteGraphStore(GraphStore):
 
         return list(nodes_by_id.values()), edges
 
+    def list_symbol_index(self, user_id: str, repo_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, name, kind, file_path, content_hash FROM code_symbols "
+                "WHERE user_id = ? AND repo_id = ?",
+                (user_id, repo_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_symbol_ids(self, user_id: str, repo_id: str) -> list[str]:
+        """Just the symbol ids for one repo. LocalMultiRepoGraphStore needs these to
+        ask the central store about MENTIONS edges without pulling whole rows."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM code_symbols WHERE user_id = ? AND repo_id = ?", (user_id, repo_id)
+            ).fetchall()
+        return [row["id"] for row in rows]
+
     def ping(self) -> bool:
         with self._lock:
             self._conn.execute("SELECT 1")
@@ -810,6 +847,14 @@ class LocalMultiRepoGraphStore(GraphStore):
         symbol_ids = [n["id"] for n in nodes]
         entity_nodes, mention_edges = self._central.get_mentioning_text_entities(symbol_ids)
         return nodes + entity_nodes, edges + mention_edges
+
+    def list_symbol_index(self, user_id: str, repo_id: str) -> list[dict]:
+        # Symbols live only in the per-repo store; the central store has no code_symbols
+        # rows for this repo, so there's nothing to merge in here.
+        repo = self._central.get_repo(user_id, repo_id)
+        if repo is None:
+            return []
+        return self._repo_store(repo["local_path"]).list_symbol_index(user_id, repo_id)
 
     def ping(self) -> bool:
         return self._central.ping()

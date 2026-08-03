@@ -88,6 +88,14 @@ class FakeGraphStore(GraphStore):
                 edges.append({"source": e["source"], "target": e["target"], "type": "MENTIONS"})
         return list(nodes_by_id.values()), edges
 
+    def list_symbol_index(self, user_id: str, repo_id: str) -> list[dict]:
+        return [
+            {"id": s["id"], "name": s["name"], "kind": s["kind"],
+             "file_path": s["file_path"], "content_hash": s.get("content_hash")}
+            for s in self.symbols.values()
+            if s["user_id"] == user_id and s["repo_id"] == repo_id
+        ]
+
     def ping(self) -> bool:
         return True
 
