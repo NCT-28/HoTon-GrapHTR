@@ -29,15 +29,13 @@ def _edges_within(g: nx.MultiDiGraph, node_ids: set[str]) -> list[dict]:
     ]
 
 
-def bfs_query(nodes: list[dict], edges: list[dict], keyword: str, depth: int = 2) -> tuple[list[dict], list[dict]]:
-    """Seed on nodes whose name contains `keyword` (case-insensitive), then
-    expand outward (both directions) up to `depth` hops. Returns the matched
-    subgraph as (nodes, edges); ([], []) if nothing matches."""
-    g = _build_graph(nodes, edges)
+def _bfs_from_graph(g: nx.MultiDiGraph, keyword: str, depth: int) -> set[str]:
+    """BFS core operating on an already-built graph, so callers running several
+    keywords over the same graph pay the build cost once."""
     keyword_lower = keyword.lower()
     seeds = {n for n, data in g.nodes(data=True) if keyword_lower in data.get("name", "").lower()}
     if not seeds:
-        return [], []
+        return set()
 
     visited = set(seeds)
     frontier = set(seeds)
@@ -51,7 +49,17 @@ def bfs_query(nodes: list[dict], edges: list[dict], keyword: str, depth: int = 2
             break
         visited.update(next_frontier)
         frontier = next_frontier
+    return visited
 
+
+def bfs_query(nodes: list[dict], edges: list[dict], keyword: str, depth: int = 2) -> tuple[list[dict], list[dict]]:
+    """Seed on nodes whose name contains `keyword` (case-insensitive), then
+    expand outward (both directions) up to `depth` hops. Returns the matched
+    subgraph as (nodes, edges); ([], []) if nothing matches."""
+    g = _build_graph(nodes, edges)
+    visited = _bfs_from_graph(g, keyword, depth)
+    if not visited:
+        return [], []
     return [g.nodes[n] for n in visited], _edges_within(g, visited)
 
 
@@ -103,15 +111,19 @@ def fuse_graph_context(
         return [], []
 
     nodes, edges = graph_store.get_subgraph(user_id, repo_id)
+    # Built once and reused across keywords: calling bfs_query per keyword rebuilt
+    # the whole repo graph each time, and computed a full edge scan per call that
+    # this function discarded in favour of the merged_edges pass below.
+    g = _build_graph(nodes, edges)
+
     seen_ids: set[str] = set()
     merged_nodes: list[dict] = []
 
     for kw in keywords:
-        kw_nodes, _kw_edges = bfs_query(nodes, edges, kw, depth=1)
-        for n in kw_nodes:
-            if n["id"] not in seen_ids:
-                seen_ids.add(n["id"])
-                merged_nodes.append(n)
+        for node_id in _bfs_from_graph(g, kw, depth=1):
+            if node_id not in seen_ids:
+                seen_ids.add(node_id)
+                merged_nodes.append(g.nodes[node_id])
         if len(merged_nodes) >= max_nodes:
             break
 

@@ -91,3 +91,37 @@ def test_fuse_graph_context_filters_edges_to_kept_nodes():
     nodes, edges = fuse_graph_context(store, "u1", "r1", ["dog"], max_nodes=15)
     kept_ids = {n["id"] for n in nodes}
     assert all(e["source"] in kept_ids and e["target"] in kept_ids for e in edges)
+
+
+def test_fuse_graph_context_builds_the_graph_once_across_keywords(monkeypatch, graph_store):
+    from app.graph import graph_query
+
+    graph_store.upsert_repo({
+        "user_id": "u1", "repo_id": "r1", "source": "s",
+        "local_path": "/tmp/r1", "last_indexed_at": "now",
+    })
+    graph_store.upsert_symbols([
+        {"id": "a", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "retrieve_chunks",
+         "file_path": "a.py", "start_line": 1, "end_line": 2, "language": "python"},
+        {"id": "b", "user_id": "u1", "repo_id": "r1", "kind": "class", "name": "Embedder",
+         "file_path": "b.py", "start_line": 1, "end_line": 2, "language": "python"},
+        {"id": "c", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "rerank",
+         "file_path": "c.py", "start_line": 1, "end_line": 2, "language": "python"},
+    ])
+    graph_store.upsert_code_edges([{"source": "a", "target": "b", "type": "CALLS"}])
+
+    builds = {"count": 0}
+    real_build_graph = graph_query._build_graph
+
+    def counting_build_graph(nodes, edges):
+        builds["count"] += 1
+        return real_build_graph(nodes, edges)
+
+    monkeypatch.setattr(graph_query, "_build_graph", counting_build_graph)
+
+    nodes, _edges = graph_query.fuse_graph_context(
+        graph_store, "u1", "r1", ["retrieve_chunks", "Embedder", "rerank"]
+    )
+
+    assert {n["name"] for n in nodes} == {"retrieve_chunks", "Embedder", "rerank"}
+    assert builds["count"] == 1
