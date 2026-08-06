@@ -17,11 +17,12 @@ from app.rag.profile import get_or_create_profile, update_profile_from_message
 from app.agentic.react import run_multi_step_retrieval
 from app.rag.retrieval import retrieve_chunks
 from app.agentic.routing import QueryComplexity, classify_query
-from app.clients.qdrant_store import count_code_symbol_embeddings
 from app.graph.code_graph_store import GraphStore
-from app.graph.graph_query import bfs_query, explain_node, fuse_graph_context, shortest_path
+from app.graph.code_parser import parse_repo
+from app.graph.graph_query import fuse_graph_context
 from app.graph.repo_source import resolve_repo_source
 from app.graph.repo_watcher import RepoWatcherManager
+from app.graph.snapshot_writer import render_viewer, write_graph_snapshot
 from app.dashboard.tracker import track_usage
 from app.dashboard.usage_store import UsageStore
 
@@ -118,23 +119,6 @@ class GraphEdgeOut(BaseModel):
     type: str
 
 
-class QueryCodeGraphResult(BaseModel):
-    nodes: list[GraphNodeOut]
-    edges: list[GraphEdgeOut]
-
-
-class GraphSnapshotResult(BaseModel):
-    repo_id: str
-    node_count: int
-    edge_count: int
-    node_kinds: dict[str, int]
-    edge_types: dict[str, int]
-    last_indexed_at: str | None = None
-    code_symbol_count: int | None = None
-    nodes: list[GraphNodeOut]
-    edges: list[GraphEdgeOut]
-
-
 def _to_node_out(node: dict) -> GraphNodeOut:
     return GraphNodeOut(
         id=node["id"], name=node["name"], kind=node.get("kind"), file_path=node.get("file_path"),
@@ -221,71 +205,19 @@ def embed_text_impl(ctx: ToolContext, text: str) -> EmbedTextResult:
     return EmbedTextResult(embedding=ctx.embedder.embed_single(text))
 
 
-def ingest_codebase_impl(ctx: ToolContext, user_id: str, source: str) -> IngestCodebaseResult:
-    existing = next(
-        (r for r in ctx.graph_store.list_repos() if r["user_id"] == user_id and r["source"] == source),
-        None,
-    )
-    repo_id = existing["repo_id"] if existing else str(uuid.uuid4())
+def ingest_codebase_impl(ctx: ToolContext, source: str) -> IngestCodebaseResult:
+    # Git URLs would clone into settings.code_repos_dir inside the container and
+    # the graphtr-out/ written there would be unreachable to the caller -- and with
+    # a fresh repo_id per call, every clone would leak a new directory.
+    if source.startswith(("http://", "https://")):
+        raise ValueError("git URLs are not supported; clone the repo and pass a local path")
+
+    repo_id = str(uuid.uuid4())
     local_path = resolve_repo_source(source, repo_id)
-    ctx.watcher_manager.reindex(user_id, repo_id, local_path)
-    ctx.watcher_manager.watch(user_id, repo_id, local_path)
-    nodes, edges = ctx.graph_store.get_subgraph(user_id, repo_id)
-    return IngestCodebaseResult(repo_id=repo_id, symbol_count=len(nodes), edge_count=len(edges))
-
-
-def query_code_graph_impl(
-    ctx: ToolContext, user_id: str, repo_id: str, mode: str,
-    keyword: str = "", from_name: str = "", to_name: str = "", name: str = "", depth: int = 2,
-) -> QueryCodeGraphResult:
-    nodes, edges = ctx.graph_store.get_subgraph(user_id, repo_id)
-
-    if mode == "query":
-        result_nodes, result_edges = bfs_query(nodes, edges, keyword, depth)
-    elif mode == "path":
-        result = shortest_path(nodes, edges, from_name, to_name)
-        result_nodes, result_edges = result if result else ([], [])
-    elif mode == "explain":
-        result = explain_node(nodes, edges, name)
-        if result is None:
-            result_nodes, result_edges = [], []
-        else:
-            center, neighbors, related_edges = result
-            result_nodes, result_edges = [center, *neighbors], related_edges
-    else:
-        raise ValueError(f"unknown query_code_graph mode: {mode}")
-
-    return QueryCodeGraphResult(
-        nodes=[_to_node_out(n) for n in result_nodes],
-        edges=[GraphEdgeOut(source=e["source"], target=e["target"], type=e["type"]) for e in result_edges],
-    )
-
-
-def export_graph_snapshot_impl(ctx: ToolContext, user_id: str, repo_id: str) -> GraphSnapshotResult:
-    nodes, edges = ctx.graph_store.get_subgraph(user_id, repo_id)
-
-    node_kinds: dict[str, int] = {}
-    for n in nodes:
-        kind = n.get("kind") or "unknown"
-        node_kinds[kind] = node_kinds.get(kind, 0) + 1
-
-    edge_types: dict[str, int] = {}
-    for e in edges:
-        edge_types[e["type"]] = edge_types.get(e["type"], 0) + 1
-
-    repo = ctx.graph_store.get_repo(user_id, repo_id)
-
-    return GraphSnapshotResult(
-        repo_id=repo_id,
-        node_count=len(nodes),
-        edge_count=len(edges),
-        node_kinds=node_kinds,
-        edge_types=edge_types,
-        last_indexed_at=repo.get("last_indexed_at") if repo else None,
-        code_symbol_count=count_code_symbol_embeddings(ctx.client, ctx.graph_store, user_id, repo_id),
-        nodes=[_to_node_out(n) for n in nodes],
-        edges=[GraphEdgeOut(source=e["source"], target=e["target"], type=e["type"]) for e in edges],
-    )
+    symbols, edges = parse_repo(repo_id, local_path)
+    out_dir = write_graph_snapshot(local_path, repo_id, symbols, edges)
+    render_viewer(out_dir)
+    return IngestCodebaseResult(repo_id=repo_id, symbol_count=len(symbols), edge_count=len(edges))
 
 
 def build_mcp_server(ctx: ToolContext) -> FastMCP:
@@ -323,26 +255,11 @@ def build_mcp_server(ctx: ToolContext) -> FastMCP:
             return embed_text_impl(ctx, text)
 
     @mcp.tool()
-    def ingest_codebase(user_id: str, source: str) -> IngestCodebaseResult:
-        """Parse a local path or git URL into the code knowledge graph and start watching it for changes."""
-        with track_usage(ctx.usage_store, "ingest_codebase", user_id):
-            return ingest_codebase_impl(ctx, user_id, source)
-
-    @mcp.tool()
-    def query_code_graph(
-        user_id: str, repo_id: str, mode: str,
-        keyword: str = "", from_name: str = "", to_name: str = "", name: str = "", depth: int = 2,
-    ) -> QueryCodeGraphResult:
-        """Query the code graph for a repo. mode='query' (keyword BFS from `keyword`),
-        'path' (shortest path from `from_name` to `to_name`), 'explain' (node + neighbors by `name`)."""
-        with track_usage(ctx.usage_store, "query_code_graph", user_id, repo_id=repo_id):
-            return query_code_graph_impl(ctx, user_id, repo_id, mode, keyword, from_name, to_name, name, depth)
-
-    @mcp.tool()
-    def export_graph_snapshot(user_id: str, repo_id: str) -> GraphSnapshotResult:
-        """Full unfiltered node/edge dump for a repo (code graph + linked TextEntity/MENTIONS),
-        for exporting a local graphtr-out/ snapshot that can be queried offline without MCP calls."""
-        with track_usage(ctx.usage_store, "export_graph_snapshot", user_id, repo_id=repo_id):
-            return export_graph_snapshot_impl(ctx, user_id, repo_id)
+    def ingest_codebase(source: str) -> IngestCodebaseResult:
+        """Parse a local repo path into <repo>/graphtr-out/ (graph.json, manifest.json,
+        graphtr.html). One-shot: nothing is kept server-side, query the output offline
+        with scripts/query.py. Git URLs are not supported -- clone first, pass a path."""
+        with track_usage(ctx.usage_store, "ingest_codebase", ""):
+            return ingest_codebase_impl(ctx, source)
 
     return mcp

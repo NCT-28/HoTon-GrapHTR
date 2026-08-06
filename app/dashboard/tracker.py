@@ -21,8 +21,6 @@ MCP_TOOL_NAMES = frozenset({
     "update_profile_from_message",
     "embed_text",
     "ingest_codebase",
-    "query_code_graph",
-    "export_graph_snapshot",
 })
 
 
