@@ -17,14 +17,14 @@ FastAPI, Qdrant, Neo4j, Postgres, sentence-transformers, transformers/torch, tre
 ## Setup
 
 ```bash
-cp docker-graph/.env.example .env
+cp docker-graphtr/.env.example .env
 pip install -r requirements.txt
 ```
 
-Configure `.env` (see `docker-graph/.env.example` for all variables): Qdrant/Neo4j/Postgres connection info, embedding/reasoning model names, SearXNG/browser service URLs, dashboard credentials.
+Configure `.env` (see `docker-graphtr/.env.example` for all variables): Qdrant/Neo4j/Postgres connection info, embedding/reasoning model names, SearXNG/browser service URLs, dashboard credentials.
 
 `DASHBOARD_USER` and `DASHBOARD_PASSWORD` are required for the dashboard to
-serve. `install.sh` copies `docker-graph/.env.example` with both blank, so `/dashboard`
+serve. `install.sh` copies `docker-graphtr/.env.example` with both blank, so `/dashboard`
 and `/api/dashboard/summary` return `503 dashboard auth not configured` until you
 set them in `.env` and restart. This is deliberate: `install.sh` binds uvicorn to
 `0.0.0.0:8030`, and the summary endpoint exposes per-user ids and counts, every
@@ -35,7 +35,7 @@ ingested repo across every user, and backend health error text.
 ### Docker (recommended)
 
 ```bash
-docker compose -f docker-graph/docker-compose.yml up --build
+docker compose -f docker-graphtr/docker-compose.yml up --build
 ```
 
 Starts the app plus Qdrant, Neo4j, and Postgres. App listens on `:8030`.
@@ -113,7 +113,7 @@ ls graphtr-out/
 ```
 
 **Config:** set `DEPLOY_MODE=local` either as an env var (as above) or in
-`.env` (`cp docker-graph/.env.example .env`, then edit `DEPLOY_MODE=local`).
+`.env` (`cp docker-graphtr/.env.example .env`, then edit `DEPLOY_MODE=local`).
 `LOCAL_DATA_DIR` (default `./graphtr-out`) controls where the three files
 land — set it to point elsewhere if you don't want them under the repo.
 
@@ -142,7 +142,7 @@ app/
   mcp_server.py
 scripts/      # knowledge-base build/index, skill bootstrap
 tests/
-docker-graph/ # Dockerfile, docker-compose.yml, .env.example
+docker-graphtr/ # Dockerfile, docker-compose.yml, .env.example
 install.sh    # zero-service installer -- clones (if needed) + sets up + runs
 uninstall.sh  # removes what install.sh created (.venv/, local data, optionally .env)
 ```

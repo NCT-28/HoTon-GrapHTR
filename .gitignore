@@ -15,7 +15,7 @@ env/
 .env
 .env.*
 !.env.example
-!docker-graph/.env.example
+!docker-graphtr/.env.example
 
 # Test / coverage
 .pytest_cache/
@@ -35,5 +35,5 @@ graphtr-out/*.json
 graphtr-out/*.html
 graphtr-out/*.sqlite
 graphtr-out/qdrant/
-docker-graph/code-repos/
-docker-graph/models/
+docker-graphtr/code-repos/
+docker-graphtr/models/

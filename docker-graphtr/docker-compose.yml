@@ -1,8 +1,6 @@
 services:
   hoton-graphtr:
-    build:
-      context: ..
-      dockerfile: docker-graph/Dockerfile
+    image: hoton-graphtr:${IMAGE_TAG:-latest}
     ports:
       # Host side configurable via RAG_PORT; container side stays 8030 to match
       # the Dockerfile's hardcoded `uvicorn --port 8030` CMD.
