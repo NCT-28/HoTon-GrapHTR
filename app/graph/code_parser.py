@@ -15,10 +15,9 @@ languages still get DEFINES/CALLS/IMPORTS.
 
 Symbol `id` is deterministic (sha1 of file_path+kind+qualified_name), not a
 random uuid — a symbol keeps the same id across repeated parses as long as
-its name/scope don't change, which incremental reindex (repo_watcher.py)
-relies on to know "this symbol still exists" without re-embedding it.
-`content_hash` (sha1 of the symbol's own source bytes) is the separate
-signal for "did this symbol's content actually change"."""
+its name/scope don't change. `content_hash` (sha1 of the symbol's own source
+bytes) is the separate signal for "did this symbol's content actually
+change"."""
 
 import hashlib
 import os

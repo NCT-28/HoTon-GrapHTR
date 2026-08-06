@@ -33,3 +33,13 @@ def test_health_still_works_alongside_mcp(qdrant, graph_store):
     with TestClient(app) as client:
         resp = client.get("/health")
         assert resp.status_code == 200
+
+
+def test_tool_context_has_no_watcher_manager():
+    import dataclasses
+
+    from app.mcp_server import ToolContext
+
+    fields = {f.name for f in dataclasses.fields(ToolContext)}
+    assert "watcher_manager" not in fields
+    assert {"client", "embedder", "llm", "web_search_fn", "graph_store", "usage_store"} <= fields

@@ -19,7 +19,6 @@ from app.agentic.routing import QueryComplexity, classify_query
 from app.graph.code_graph_store import GraphStore
 from app.graph.code_parser import parse_repo
 from app.graph.repo_source import resolve_repo_source
-from app.graph.repo_watcher import RepoWatcherManager
 from app.graph.snapshot_writer import render_viewer, write_graph_snapshot
 from app.dashboard.tracker import track_usage
 from app.dashboard.usage_store import UsageStore
@@ -32,18 +31,16 @@ class ToolContext:
     llm: object
     web_search_fn: object  # Callable[[str], Awaitable[list[str]]]
     graph_store: GraphStore | None = None
-    watcher_manager: RepoWatcherManager | None = None
     usage_store: UsageStore | None = None
 
 
 def build_tool_context(
     client: QdrantClient, embedder, llm, web_search_fn,
-    graph_store: GraphStore | None = None, watcher_manager: RepoWatcherManager | None = None,
-    usage_store: UsageStore | None = None,
+    graph_store: GraphStore | None = None, usage_store: UsageStore | None = None,
 ) -> ToolContext:
     return ToolContext(
         client=client, embedder=embedder, llm=llm, web_search_fn=web_search_fn,
-        graph_store=graph_store, watcher_manager=watcher_manager, usage_store=usage_store,
+        graph_store=graph_store, usage_store=usage_store,
     )
 
 
