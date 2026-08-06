@@ -122,14 +122,14 @@ Quick reference (full detail in skill):
 
 ## graphtr
 
-If this project has a `graphtr-out/` directory, it's a local snapshot of the hoton-graphtr
-MCP server's code graph for this repo (see the `graphtr` skill for the full workflow).
+If this project has a `graphtr-out/` directory, it's a local snapshot of this repo's code
+graph, written directly by `ingest_codebase` (see the `graphtr` skill for the full workflow).
 
 Rules:
 - For codebase questions, first run `python3 scripts/query.py --out-dir graphtr-out query "<keyword>"` when graphtr-out/graph.json exists. Use `scripts/query.py --out-dir graphtr-out path "<A>" "<B>"` for relationships and `scripts/query.py --out-dir graphtr-out explain "<name>"` for a node + its neighbors. These return a scoped subgraph, usually much smaller than raw grep output.
-- If the script errors or the graph looks stale, fall back to `mcp__hoton-graphtr__query_code_graph` with the `user_id`/`repo_id` from `graphtr-out/manifest.json`.
+- This is the only query path — there is no MCP tool fallback (the graph is not server-resident).
 - Open `graphtr-out/graphtr.html` in a browser for a visual, interactive view.
-- Refreshing the graph after code changes is a re-export from hoton-graphtr, not a local rebuild — see the `graphtr` skill's Refresh flow; do not call `ingest_codebase` again (it mints a new `repo_id` and creates a duplicate graph).
+- Refresh by re-running `ingest_codebase(source)`; every call is a full reparse and mints a fresh `repo_id` — that's expected, not a mistake to avoid.
 - If there's no `graphtr-out/` yet, this section doesn't apply — skip it and use `serena` directly.
 
 ---
@@ -165,8 +165,8 @@ docker compose -f docker/docker-compose.yml up --build
 
 # Tests
 pytest
-pytest tests/test_graph_query.py            # single file
-pytest tests/test_graph_query.py::test_name # single test
+pytest tests/test_ingest_codebase.py            # single file
+pytest tests/test_ingest_codebase.py::test_name # single test
 ```
 
 `install.sh` / `uninstall.sh` at the repo root handle the zero-service
@@ -185,7 +185,7 @@ these, both branches need to keep working:
 | Concern | `server` | `local` | Dispatch point |
 |---|---|---|---|
 | Vectors | Qdrant over HTTP (`qdrant_url`) | embedded Qdrant at `local_data_dir/qdrant` | `app/clients/qdrant_store.py::get_qdrant_client` |
-| Code graph | Neo4j (`GraphStore` over bolt) | `SqliteGraphStore` at `local_data_dir/graph.sqlite` | `app/graph/code_graph_store.py` (~line 584) |
+| Code graph | n/a (stateless — ingest writes to the repo's own `graphtr-out/`) | n/a (same) | `app/graph/snapshot_writer.py` |
 | Usage tracking | `PostgresUsageStore` | `SqliteUsageStore` at `local_data_dir/usage.sqlite` | `app/dashboard/usage_store.py::get_usage_store` |
 
 Switching `DEPLOY_MODE` does not migrate data between the two stores — they
@@ -203,12 +203,12 @@ in-memory `QdrantClient(":memory:")` fixture for the pattern to follow.
   SearXNG web search (`grading.py`), query complexity routing (`routing.py`).
 - `clients/` — thin wrappers around Qdrant, the embedding model, the LLM, and
   a browser-automation service used for URL ingestion.
-- `graph/` — code graph pipeline: `repo_source.py` resolves a repo to ingest,
-  `code_parser.py` (tree-sitter) + `entity_extraction.py`/`entity_linker.py`
-  build symbols/edges, `graph_pipeline.py` orchestrates ingestion,
-  `code_graph_store.py` is the `GraphStore` abstraction (Neo4j/SQLite),
-  `graph_query.py` implements BFS/shortest-path/explain queries,
-  `repo_watcher.py` watches a checkout and reindexes on change.
+- `graph/` — code graph pipeline: `repo_source.py` resolves a local repo path
+  to ingest, `code_parser.py` (tree-sitter) parses symbols/edges,
+  `snapshot_writer.py` writes them straight to `<repo>/graphtr-out/` (no
+  server-side state), `entity_extraction.py`/`entity_linker.py` build the
+  separate text-entity graph, `code_graph_store.py` is the `GraphStore`
+  abstraction (Neo4j/SQLite) that still backs that TextEntity surface.
 - `rag/` — document ingestion/chunking (`chunker.py`, `documents.py`),
   retrieval (`retrieval.py`), self-consistency/context assembly
   (`context.py`), user memory and profile stores (`memory.py`, `profile.py`),
