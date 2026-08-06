@@ -17,89 +17,9 @@ def qdrant() -> QdrantClient:
 
 @dataclass
 class FakeGraphStore(GraphStore):
-    repos: dict = field(default_factory=dict)
-    symbols: dict = field(default_factory=dict)
-    code_edges: list = field(default_factory=list)
     text_entities: dict = field(default_factory=dict)
     related_edges: list = field(default_factory=list)
     mentions_edges: list = field(default_factory=list)
-
-    def upsert_repo(self, repo: dict) -> None:
-        self.repos[(repo["user_id"], repo["repo_id"])] = repo
-
-    def upsert_symbols(self, symbols: list[dict]) -> None:
-        for s in symbols:
-            self.symbols[s["id"]] = s
-
-    def upsert_code_edges(self, edges: list[dict]) -> None:
-        self.code_edges.extend(edges)
-
-    def delete_repo(self, user_id: str, repo_id: str) -> None:
-        self.repos.pop((user_id, repo_id), None)
-        keep_ids = set()
-        for sid, s in list(self.symbols.items()):
-            if s["user_id"] == user_id and s["repo_id"] == repo_id:
-                del self.symbols[sid]
-            else:
-                keep_ids.add(sid)
-        self.code_edges = [e for e in self.code_edges if e["source"] in keep_ids and e["target"] in keep_ids]
-
-    def replace_repo_graph(self, repo: dict, symbols: list[dict], edges: list[dict]) -> None:
-        self.delete_repo(repo["user_id"], repo["repo_id"])
-        self.upsert_repo(repo)
-        self.upsert_symbols(symbols)
-        self.upsert_code_edges(edges)
-
-    def replace_files_in_repo(
-        self, repo: dict, stale_file_paths: list[str], symbols: list[dict], edges: list[dict]
-    ) -> None:
-        stale_ids = {
-            sid for sid, s in self.symbols.items()
-            if s["user_id"] == repo["user_id"] and s["repo_id"] == repo["repo_id"]
-            and s["file_path"] in stale_file_paths
-        }
-        for sid in stale_ids:
-            del self.symbols[sid]
-        self.code_edges = [
-            e for e in self.code_edges if e["source"] not in stale_ids and e["target"] not in stale_ids
-        ]
-        self.mentions_edges = [e for e in self.mentions_edges if e["target"] not in stale_ids]
-        self.upsert_repo(repo)
-        self.upsert_symbols(symbols)
-        self.upsert_code_edges(edges)
-
-    def get_repo(self, user_id: str, repo_id: str) -> dict | None:
-        return self.repos.get((user_id, repo_id))
-
-    def list_repos(self) -> list[dict]:
-        return list(self.repos.values())
-
-    def get_subgraph(self, user_id: str, repo_id: str) -> tuple[list[dict], list[dict]]:
-        nodes_by_id = {
-            s["id"]: s for s in self.symbols.values() if s["user_id"] == user_id and s["repo_id"] == repo_id
-        }
-        ids = set(nodes_by_id.keys())
-        edges = [e for e in self.code_edges if e["source"] in ids and e["target"] in ids]
-        for e in self.mentions_edges:
-            if e["target"] in ids:
-                te = self.text_entities.get(e["source"])
-                if te is not None:
-                    nodes_by_id[te["id"]] = te
-                edges.append({"source": e["source"], "target": e["target"], "type": "MENTIONS"})
-        return list(nodes_by_id.values()), edges
-
-    def list_symbol_index(self, user_id: str, repo_id: str) -> list[dict]:
-        return [
-            {"id": s["id"], "name": s["name"], "kind": s["kind"],
-             "file_path": s["file_path"], "content_hash": s.get("content_hash")}
-            for s in self.symbols.values()
-            if s["user_id"] == user_id and s["repo_id"] == repo_id
-        ]
-
-    def count_subgraph(self, user_id: str, repo_id: str) -> tuple[int, int]:
-        # In-memory, so delegating keeps the fake trivially consistent with get_subgraph.
-        nodes, edges = self.get_subgraph(user_id, repo_id)
-        return len(nodes), len(edges)
 
     def ping(self) -> bool:
         return True
@@ -118,7 +38,9 @@ class FakeGraphStore(GraphStore):
         return [e for e in self.text_entities.values() if e["user_id"] == user_id]
 
     def list_code_symbols(self, user_id: str) -> list[dict]:
-        return [s for s in self.symbols.values() if s["user_id"] == user_id]
+        # Code symbols are never stored anymore -- ingest_codebase writes graphtr-out/
+        # instead. Kept so entity_linker's call site still resolves.
+        return []
 
     def delete_text_entities_by_source_doc(self, user_id: str, source_doc_id: str) -> None:
         remove_ids = {

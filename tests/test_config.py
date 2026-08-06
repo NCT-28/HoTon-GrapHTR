@@ -91,3 +91,14 @@ def test_settings_reasoning_model_idle_unload_default(monkeypatch):
     # 300s made a bursty-but-interactive MCP session pay a full model reload
     # (under the generation lock) between question batches.
     assert settings.reasoning_model_idle_unload_seconds == 1800
+
+
+def test_graph_store_abc_exposes_only_the_text_entity_surface():
+    from app.graph.code_graph_store import GraphStore
+
+    abstract = set(GraphStore.__abstractmethods__)
+    assert abstract == {
+        "upsert_text_entities", "upsert_related_edges", "upsert_mentions_edges",
+        "list_text_entities", "list_code_symbols", "delete_text_entities_by_source_doc",
+        "ping",
+    }

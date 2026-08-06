@@ -25,46 +25,24 @@ class _FakeLLM:
         return "no"
 
 
-def test_link_entities_to_code_creates_mentions_for_confirmed_matches(graph_store):
-    graph_store.upsert_text_entities([
-        {"id": "e1", "user_id": "u1", "name": "Retriever", "entity_type": "concept",
-         "source_doc_id": "doc-1", "source_memory_id": None},
-    ])
-    graph_store.upsert_symbols([
-        {"id": "s1", "user_id": "u1", "repo_id": "r1", "kind": "class", "name": "Retriever",
-         "file_path": "retrieval.py", "start_line": 1, "end_line": 10, "language": "python"},
-        {"id": "s2", "user_id": "u1", "repo_id": "r1", "kind": "function", "name": "unrelated_helper",
-         "file_path": "utils.py", "start_line": 1, "end_line": 2, "language": "python"},
-    ])
-    llm = _FakeLLM(confirm_names={"Retriever"})
-    embedder = _FakeEmbedder()
-
-    linked = link_entities_to_code(graph_store, llm, embedder, "u1", "doc-1")
-
-    assert linked == 1
-    assert graph_store.mentions_edges == [{"source": "e1", "target": "s1"}]
-
-
-def test_link_entities_to_code_returns_zero_when_no_symbols(graph_store):
+def test_link_entities_to_code_is_a_no_op_without_stored_code_symbols(graph_store):
+    # ingest_codebase writes graphtr-out/ instead of storing code symbols, so
+    # list_code_symbols is always empty and entity->code linking never fires.
     graph_store.upsert_text_entities([
         {"id": "e1", "user_id": "u1", "name": "Retriever", "entity_type": "concept",
          "source_doc_id": "doc-1", "source_memory_id": None},
     ])
 
-    linked = link_entities_to_code(graph_store, _FakeLLM(set()), _FakeEmbedder(), "u1", "doc-1")
+    linked = link_entities_to_code(graph_store, _FakeLLM({"Retriever"}), _FakeEmbedder(), "u1", "doc-1")
 
     assert linked == 0
     assert graph_store.mentions_edges == []
 
 
-def test_link_entities_to_code_ignores_entities_from_other_documents(graph_store):
+def test_link_entities_to_code_returns_zero_when_no_entities_for_the_document(graph_store):
     graph_store.upsert_text_entities([
         {"id": "e1", "user_id": "u1", "name": "Retriever", "entity_type": "concept",
          "source_doc_id": "doc-other", "source_memory_id": None},
-    ])
-    graph_store.upsert_symbols([
-        {"id": "s1", "user_id": "u1", "repo_id": "r1", "kind": "class", "name": "Retriever",
-         "file_path": "retrieval.py", "start_line": 1, "end_line": 10, "language": "python"},
     ])
 
     linked = link_entities_to_code(graph_store, _FakeLLM({"Retriever"}), _FakeEmbedder(), "u1", "doc-1")

@@ -152,8 +152,8 @@ def test_parse_files_parses_only_the_given_paths(tmp_path):
 def test_resolve_edges_resolves_call_against_a_mixed_baseline_and_fresh_index():
     from app.graph.code_parser import resolve_edges
 
-    # `bar` looks like it came from an already-indexed, unchanged file (a plain dict,
-    # the same shape GraphStore.get_subgraph returns); `foo` is freshly parsed this pass.
+    # `bar` looks like it came from an already-indexed, unchanged file (a plain dict);
+    # `foo` is freshly parsed this pass.
     baseline = [{"id": "bar-id", "name": "bar", "kind": "function", "file_path": "b.py"}]
     fresh = [{"id": "foo-id", "name": "foo", "kind": "function", "file_path": "a.py"}]
 

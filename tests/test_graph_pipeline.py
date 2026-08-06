@@ -23,11 +23,10 @@ class _FakeEmbedder:
 
 
 @pytest.mark.asyncio
-async def test_run_entity_extraction_and_linking_creates_entities_and_mentions(graph_store):
-    graph_store.upsert_symbols([
-        {"id": "s1", "user_id": "u1", "repo_id": "r1", "kind": "class", "name": "Retriever",
-         "file_path": "retrieval.py", "start_line": 1, "end_line": 10, "language": "python"},
-    ])
+async def test_run_entity_extraction_and_linking_creates_entities_but_no_mentions(graph_store):
+    # ingest_codebase writes graphtr-out/ instead of storing code symbols, so
+    # list_code_symbols is always empty and linking is a permanent no-op --
+    # entity extraction itself is unaffected.
     llm = _FakeLLM(
         extraction_response='{"entities": [{"name": "Retriever", "type": "concept"}], "relationships": []}',
         confirm=True,
@@ -36,7 +35,7 @@ async def test_run_entity_extraction_and_linking_creates_entities_and_mentions(g
     await run_entity_extraction_and_linking(graph_store, llm, _FakeEmbedder(), "u1", "doc-1", "Text about a Retriever.")
 
     assert graph_store.list_text_entities("u1")
-    assert graph_store.mentions_edges
+    assert graph_store.mentions_edges == []
 
 
 @pytest.mark.asyncio

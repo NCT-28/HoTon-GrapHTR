@@ -242,8 +242,8 @@ def resolve_edges(
 ) -> list[ParsedEdge]:
     """Resolve DEFINES/CALLS/IMPORTS/INHERITS against a name index built from
     `index_symbols` (plain dicts with at least id/name/kind/file_path — either
-    freshly-parsed ParsedSymbol-shaped dicts, or existing GraphStore.get_subgraph()
-    node dicts for files that weren't re-parsed this pass)."""
+    freshly-parsed ParsedSymbol-shaped dicts, or node dicts for files that
+    weren't re-parsed this pass)."""
     name_to_id: dict[str, str] = {}
     class_name_to_id: dict[str, str] = {}
     basename_to_module_id: dict[str, str] = {}
