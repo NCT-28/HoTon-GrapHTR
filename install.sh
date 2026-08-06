@@ -29,6 +29,9 @@ REPO_URL="${HOTON_GRAPHTR_REPO_URL:-https://github.com/NCT-28/HoTon-GrapHTR.git}
 # without the deploy_mode field, so DEPLOY_MODE=local fails with
 # pydantic's extra_forbidden. Pin to develop until that merge happens.
 REPO_BRANCH="${HOTON_GRAPHTR_REPO_BRANCH:-develop}"
+# Override when :8030 is already taken on the target machine (another
+# service, another graphtr instance, etc).
+PORT="${HOTON_GRAPHTR_PORT:-8030}"
 
 RUN_AFTER=0
 TARGET_DIR=""
@@ -152,13 +155,13 @@ if [ "$RUN_AFTER" -eq 1 ]; then
   # after pre-download, also frees the local Qdrant storage lock before the
   # new server starts further down.
   if command -v lsof >/dev/null 2>&1; then
-    EXISTING_PIDS=$(lsof -ti tcp:8030 2>/dev/null || true)
+    EXISTING_PIDS=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
     if [ -n "$EXISTING_PIDS" ]; then
       echo ""
-      echo "Stopping existing server on :8030 (pid(s) $EXISTING_PIDS) to load new code..."
+      echo "Stopping existing server on :$PORT (pid(s) $EXISTING_PIDS) to load new code..."
       kill $EXISTING_PIDS 2>/dev/null || true
       sleep 1
-      STILL_RUNNING=$(lsof -ti tcp:8030 2>/dev/null || true)
+      STILL_RUNNING=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
       if [ -n "$STILL_RUNNING" ]; then
         kill -9 $STILL_RUNNING 2>/dev/null || true
       fi
@@ -220,13 +223,13 @@ if [ "$ORIGINAL_PWD" != "$REPO_ROOT" ]; then
   if command -v claude >/dev/null 2>&1; then
     if ! (cd "$ORIGINAL_PWD" && claude mcp list 2>/dev/null | grep -q "hoton-graphtr"); then
       echo "Registering hoton-graphtr MCP server in $ORIGINAL_PWD..."
-      (cd "$ORIGINAL_PWD" && claude mcp add --transport http hoton-graphtr http://localhost:8030/mcp -s local) || \
+      (cd "$ORIGINAL_PWD" && claude mcp add --transport http hoton-graphtr http://localhost:"$PORT"/mcp -s local) || \
         echo "Warning: MCP registration in $ORIGINAL_PWD failed, add manually:" \
-             "claude mcp add --transport http hoton-graphtr http://localhost:8030/mcp -s local" >&2
+             "claude mcp add --transport http hoton-graphtr http://localhost:$PORT/mcp -s local" >&2
     fi
   else
     echo "Note: 'claude' CLI not found -- register the MCP server manually:"
-    echo "  cd $ORIGINAL_PWD && claude mcp add --transport http hoton-graphtr http://localhost:8030/mcp -s local"
+    echo "  cd $ORIGINAL_PWD && claude mcp add --transport http hoton-graphtr http://localhost:$PORT/mcp -s local"
   fi
 fi
 
@@ -240,8 +243,8 @@ if [ "$RUN_AFTER" -eq 1 ]; then
   # pre-download, to free GPU memory and the local Qdrant storage lock.)
   LOG_FILE="$REPO_ROOT/graphtr-server.log"
   echo ""
-  echo "Starting server on :8030 (detached -- survives Ctrl+C / shell exit)..."
-  nohup uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030 \
+  echo "Starting server on :$PORT (detached -- survives Ctrl+C / shell exit)..."
+  nohup uvicorn app.main:create_app --factory --host 0.0.0.0 --port "$PORT" \
     >"$LOG_FILE" 2>&1 </dev/null &
   SERVER_PID=$!
   disown
@@ -251,8 +254,8 @@ else
   echo ""
   echo "Run:"
   echo "  cd $REPO_ROOT && source .venv/bin/activate"
-  echo "  uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030"
+  echo "  uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT"
   echo ""
   echo "Verify:"
-  echo "  curl http://localhost:8030/health"
+  echo "  curl http://localhost:$PORT/health"
 fi
