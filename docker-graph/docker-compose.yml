@@ -2,7 +2,7 @@ services:
   hoton-graphtr:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker-graph/Dockerfile
     ports:
       # Host side configurable via RAG_PORT; container side stays 8030 to match
       # the Dockerfile's hardcoded `uvicorn --port 8030` CMD.
@@ -33,8 +33,11 @@ services:
         condition: service_started
       neo4j:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
+      # postgres:
+      #   condition: service_healthy
+    networks:
+      - default
+      - hoton-net
 
   qdrant:
     image: qdrant/qdrant:v1.12.1
@@ -58,23 +61,27 @@ services:
       timeout: 5s
       retries: 20
 
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: lmr
-      POSTGRES_PASSWORD: ${USAGE_DB_PASSWORD:?set USAGE_DB_PASSWORD in .env — no weak default}
-      POSTGRES_DB: hoton_rag
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lmr"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: lmr
+  #     POSTGRES_PASSWORD: ${USAGE_DB_PASSWORD:?set USAGE_DB_PASSWORD in .env — no weak default}
+  #     POSTGRES_DB: hoton_rag
+  #   ports:
+  #     - "127.0.0.1:5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U lmr"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 10
 
 volumes:
   qdrant_data:
   neo4j_data:
   postgres_data:
+
+networks:
+  hoton-net:
+    external: true
