@@ -167,10 +167,13 @@ project (`other-project`): copies `.claude/skills/graphtr/` and
 `claude mcp add --transport http hoton-graphtr http://localhost:8030/mcp -s local`
 so a Claude session in `other-project` can see the tools. Safe to re-run.
 
-**Manual, if the server is already running somewhere (e.g. Docker deploy):**
+**Shared server — one hoton-graphtr instance, multiple other repos calling in:**
+this is the `--run` case above minus the "runs its own server" part. One
+machine runs hoton-graphtr; each consumer repo (same host or a different one)
+only registers as a client:
 
 ```bash
-python3 scripts/init_graphtr_skills.py /path/to/other-project
+python3 scripts/init_graphtr_skills.py /path/to/other-project   # from this repo, once per consumer
 cd /path/to/other-project && claude mcp add --transport http hoton-graphtr <server-url>/mcp -s local
 ```
 
@@ -180,7 +183,31 @@ target, rewriting `graphtr`'s script paths to invoke this repo's
 copy) and bundling `graphtr-knowledge`'s scripts under the target's own skill
 dir (it has no hoton-graphtr checkout to point at).
 
-Either way, first use in a Claude session on the target project is the
-`graphtr` skill's Bootstrap step: `ingest_codebase(source="<other-project path>")`
-writes `graphtr-out/` straight into that project. See the `graphtr` skill for
-the Docker-deploy path caveat (repo must be under the `code-repos` bind mount).
+`<server-url>` is wherever hoton-graphtr is reachable from the consumer repo
+— `http://localhost:8030` only works if consumer and server share a host;
+otherwise use the server's actual host/IP and make sure the port is reachable
+(firewall, security group, etc).
+
+**Filesystem note — this is the part that actually breaks in a multi-repo
+setup:** `ingest_codebase(source=...)` resolves `source` on the *server
+process's* filesystem (`app/mcp_server.py::ingest_codebase_impl` →
+`resolve_repo_source`), not the machine the Claude session runs on. If the
+consumer repo only exists on its own host, the server can't see it just
+because you registered the MCP connection:
+- **Docker deploy**: copy/rsync the repo into the server container's
+  `code-repos` bind mount first, then pass the in-container path
+  (`/data/code-repos/<repo>`) as `source` — see the `graphtr` skill.
+- **Bare/zero-service server on a separate host**: same problem, no built-in
+  mount — rsync/scp the repo to that host (or put both on a shared/NFS
+  volume) and pass that host-side path. There's no upload-over-MCP path; git
+  URLs are explicitly rejected by `ingest_codebase` too (`mcp_server.py:176`).
+- **Server and consumer repo on the same host** (just not run via `--run`
+  from inside it): no issue, pass the path as-is.
+
+Once `source` is reachable, first use in a Claude session on the target
+project is the `graphtr` skill's Bootstrap step:
+`ingest_codebase(source="<path as seen by the server>")` — writes
+`graphtr-out/` into the *server-visible* copy of the repo, so on a
+remote/Docker server that's the synced copy, not your working tree. Query
+results (`graphtr-out/graph.json`) then need to be pulled back if you want
+them in your own checkout too.
