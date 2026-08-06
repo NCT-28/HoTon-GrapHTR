@@ -109,12 +109,7 @@ def build_data(nodes: list[dict], edges: list[dict]):
     return raw_nodes, raw_edges, legend, edge_legend
 
 
-def main():
-    args = sys.argv[1:]
-    out_dir = DEFAULT_OUT_DIR
-    if len(args) >= 2 and args[0] == "--out-dir":
-        out_dir = Path(args[1])
-
+def build(out_dir: Path) -> None:
     graph_path = out_dir / "graph.json"
     manifest_path = out_dir / "manifest.json"
     output_path = out_dir / "graphtr.html"
@@ -137,6 +132,14 @@ def main():
     )
     output_path.write_text(html)
     print(f"wrote {output_path} ({len(raw_nodes)} nodes, {len(raw_edges)} edges)")
+
+
+def main():
+    args = sys.argv[1:]
+    out_dir = DEFAULT_OUT_DIR
+    if len(args) >= 2 and args[0] == "--out-dir":
+        out_dir = Path(args[1])
+    build(out_dir)
 
 
 TEMPLATE = """<!DOCTYPE html>
@@ -397,9 +400,8 @@ function renderBreakdown(elId, entries) {
 }
 
 // Baked at build time from graph.json (LEGEND/EDGE_LEGEND) and manifest.json
-// (code_symbol_count/last_indexed_at) -- a static snapshot, no server needed to view it.
+// (last_indexed_at) -- a static snapshot, no server needed to view it.
 document.getElementById('overview-stats').innerHTML = `
-  <div class="overview-row"><span class="overview-lbl">Code vectors</span><span class="overview-val">${MANIFEST.code_symbol_count == null ? '—' : MANIFEST.code_symbol_count}</span></div>
   <div class="overview-row"><span class="overview-lbl">Last indexed</span><span class="overview-val">${esc(MANIFEST.last_indexed_at || '—')}</span></div>
 `;
 renderBreakdown('overview-kinds', LEGEND);

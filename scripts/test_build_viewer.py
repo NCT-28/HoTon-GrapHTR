@@ -30,11 +30,11 @@ def test_build_data_edge_legend_sorted_by_count_descending():
     assert [e["type"] for e in edge_legend] == ["IMPORTS", "CALLS"]
 
 
-def test_main_bakes_manifest_code_symbol_count_and_last_indexed_at_into_html(tmp_path):
+def test_main_bakes_manifest_last_indexed_at_into_html(tmp_path):
     out_dir = tmp_path
     (out_dir / "graph.json").write_text(json.dumps({"nodes": NODES, "edges": EDGES}))
     (out_dir / "manifest.json").write_text(json.dumps({
-        "repo_id": "r1", "code_symbol_count": 42, "last_indexed_at": "2026-07-25T00:00:00",
+        "repo_id": "r1", "last_indexed_at": "2026-07-25T00:00:00",
     }))
 
     import sys
@@ -46,6 +46,20 @@ def test_main_bakes_manifest_code_symbol_count_and_last_indexed_at_into_html(tmp
         sys.argv = old_argv
 
     html = (out_dir / "graphtr.html").read_text()
-    assert '"code_symbol_count":42' in html
     assert '"last_indexed_at":"2026-07-25T00:00:00"' in html
     assert "EDGE_LEGEND" in html
+
+
+def test_build_is_callable_without_argv(tmp_path):
+    from build_viewer import build
+
+    (tmp_path / "graph.json").write_text(json.dumps({"nodes": NODES, "edges": EDGES}))
+    (tmp_path / "manifest.json").write_text(json.dumps({
+        "repo_id": "r1", "last_indexed_at": "2026-08-06T00:00:00",
+    }))
+
+    build(tmp_path)
+
+    html = (tmp_path / "graphtr.html").read_text()
+    assert "r1" in html
+    assert "2026-08-06T00:00:00" in html
