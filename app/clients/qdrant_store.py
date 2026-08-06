@@ -4,7 +4,7 @@ from functools import lru_cache
 
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
-from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, VectorParams
+from qdrant_client.models import Distance, VectorParams
 
 from app.config import get_settings
 
@@ -80,36 +80,6 @@ def get_qdrant_client() -> QdrantClient:
         client = QdrantClient(url=settings.qdrant_url)
     bootstrap_collections(client, embed_dim=settings.embed_dim)
     return client
-
-
-def count_code_symbol_embeddings(client, graph_store, user_id: str, repo_id: str) -> int | None:
-    """Vector count for one repo's code symbols, regardless of deploy mode. DEPLOY_MODE=local
-    keeps them in a per-repo embedded Qdrant (see get_repo_qdrant_client) instead of `client`,
-    so this resolves and counts that one directly rather than filtering `client`, which server
-    mode's single shared collection counts by user_id/repo_id payload instead."""
-    settings = get_settings()
-    if settings.deploy_mode == "local":
-        repo = graph_store.get_repo(user_id, repo_id) if graph_store is not None else None
-        local_path = repo.get("local_path") if repo else None
-        if not local_path or not os.path.isdir(local_path):
-            return None
-        try:
-            return get_repo_qdrant_client(local_path).count(collection_name=CODE_SYMBOL_EMBEDDINGS).count
-        except Exception:
-            return None
-
-    if client is None:
-        return None
-    try:
-        return client.count(
-            collection_name=CODE_SYMBOL_EMBEDDINGS,
-            count_filter=Filter(must=[
-                FieldCondition(key="user_id", match=MatchValue(value=user_id)),
-                FieldCondition(key="repo_id", match=MatchValue(value=repo_id)),
-            ]),
-        ).count
-    except Exception:
-        return None
 
 
 @lru_cache

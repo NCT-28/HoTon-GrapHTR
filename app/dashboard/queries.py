@@ -1,64 +1,28 @@
-"""Read-side aggregation for GET /api/dashboard/summary: Qdrant storage sizes,
-Neo4j project breakdown, and usage_events breakdowns by tool/user."""
+"""Read-side aggregation for GET /api/dashboard/summary: Qdrant storage sizes
+and usage_events breakdowns by tool/user."""
 
 from datetime import datetime, timedelta, timezone
 
 from app.clients.qdrant_store import (
-    CODE_SYMBOL_EMBEDDINGS, PROFILE_SNAPSHOTS, RAG_CHUNKS, RAG_DOCUMENTS, USER_MEMORIES, USER_PROFILES,
-    count_code_symbol_embeddings,
+    PROFILE_SNAPSHOTS, RAG_CHUNKS, RAG_DOCUMENTS, USER_MEMORIES, USER_PROFILES,
 )
-from app.config import get_settings
 from app.dashboard.tracker import MCP_TOOL_NAMES
 
-_COLLECTIONS = [RAG_DOCUMENTS, RAG_CHUNKS, USER_MEMORIES, USER_PROFILES, PROFILE_SNAPSHOTS, CODE_SYMBOL_EMBEDDINGS]
+_COLLECTIONS = [RAG_DOCUMENTS, RAG_CHUNKS, USER_MEMORIES, USER_PROFILES, PROFILE_SNAPSHOTS]
 
 
-def _code_symbol_embeddings_count_across_repos(graph_store) -> int:
-    total = 0
-    for repo in graph_store.list_repos():
-        count = count_code_symbol_embeddings(None, graph_store, repo["user_id"], repo["repo_id"])
-        total += count or 0
-    return total
-
-
-def storage_breakdown(client, graph_store=None) -> list[dict]:
-    # DEPLOY_MODE=local writes code-symbol vectors into a per-repo embedded Qdrant
-    # (see get_repo_qdrant_client) instead of the shared client, so that one collection
-    # has to be summed across repos rather than counted on `client` like the others.
-    fan_out_code_symbols = graph_store is not None and get_settings().deploy_mode == "local"
-
+def storage_breakdown(client) -> list[dict]:
     result = []
     for name in _COLLECTIONS:
-        if name == CODE_SYMBOL_EMBEDDINGS and fan_out_code_symbols:
-            points = _code_symbol_embeddings_count_across_repos(graph_store)
-        else:
-            try:
-                points = client.count(collection_name=name).count
-            except Exception:
-                points = None
+        try:
+            points = client.count(collection_name=name).count
+        except Exception:
+            points = None
         result.append({"collection": name, "points": points})
 
     total = sum(r["points"] or 0 for r in result)
     for r in result:
         r["percent"] = round((r["points"] or 0) / total * 100, 1) if total else 0.0
-    return result
-
-
-def project_breakdown(graph_store) -> list[dict]:
-    if graph_store is None:
-        return []
-    result = []
-    for repo in graph_store.list_repos():
-        # count_subgraph, not get_subgraph: this endpoint only needs two integers, and
-        # get_subgraph would pull every node and edge of every repo of every user into
-        # Python to compute them.
-        node_count, edge_count = graph_store.count_subgraph(repo["user_id"], repo["repo_id"])
-        result.append({
-            "repo_id": repo["repo_id"],
-            "node_count": node_count,
-            "edge_count": edge_count,
-            "last_indexed_at": repo.get("last_indexed_at"),
-        })
     return result
 
 
