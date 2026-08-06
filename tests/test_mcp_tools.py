@@ -39,16 +39,15 @@ class FakeLLM:
 
 class ScriptedLLM:
     """Routes canned responses by inspecting distinguishing text in each prompt,
-    since the full pipeline calls generate() for routing, HyDE, grading, graph
-    keyword extraction, and continue-decisions in sequence with different prompts."""
+    since the full pipeline calls generate() for routing, HyDE, grading, and
+    continue-decisions in sequence with different prompts."""
 
-    def __init__(self, *, classification="single", hyde_text="hypothetical passage", grade="0.9", continue_json='{"enough": true, "next_query": null}', extraction="[]", graph_keywords="[]"):
+    def __init__(self, *, classification="single", hyde_text="hypothetical passage", grade="0.9", continue_json='{"enough": true, "next_query": null}', extraction="[]"):
         self.classification = classification
         self.hyde_text = hyde_text
         self.grade = grade
         self.continue_json = continue_json
         self.extraction = extraction
-        self.graph_keywords = graph_keywords
 
     def generate(self, prompt, max_new_tokens=256, temperature=0.1):
         if "Classification:" in prompt:
@@ -57,8 +56,6 @@ class ScriptedLLM:
             return self.hyde_text
         if "Relevance score:" in prompt:
             return self.grade
-        if "code symbol, class, or function names" in prompt:
-            return self.graph_keywords
         if "JSON:" in prompt and "enough" in prompt:
             return self.continue_json
         return self.extraction
@@ -159,42 +156,14 @@ async def test_get_rag_context_multi_uses_react_loop(qdrant):
 
 
 @pytest.mark.asyncio
-async def test_get_rag_context_fuses_graph_when_repo_id_given(qdrant, graph_store):
-    user_id = uuid.uuid4()
-    graph_store.upsert_symbols([
-        {"id": "1", "user_id": str(user_id), "repo_id": "r1", "kind": "function", "name": "retrieve_chunks",
-         "file_path": "app/rag/retrieval.py", "start_line": 29, "end_line": 66, "language": "python"},
-    ])
-    ctx = _ctx(qdrant, graph_store=graph_store, classification="single", grade="0.9", graph_keywords='["retrieve_chunks"]')
+async def test_get_rag_context_takes_no_repo_id(qdrant):
+    import inspect
 
-    result = await get_rag_context_impl(ctx, str(user_id), "how does chunk retrieval work?", repo_id="r1")
+    params = list(inspect.signature(get_rag_context_impl).parameters)
+    assert params == ["ctx", "user_id", "query"]
 
-    assert "[Code Graph Context]" in result.context_text
-    assert "retrieve_chunks (function)" in result.context_text
-
-
-@pytest.mark.asyncio
-async def test_get_rag_context_skips_graph_fusion_without_repo_id(qdrant, graph_store):
-    user_id = uuid.uuid4()
-    graph_store.upsert_symbols([
-        {"id": "1", "user_id": str(user_id), "repo_id": "r1", "kind": "function", "name": "retrieve_chunks"},
-    ])
-    ctx = _ctx(qdrant, graph_store=graph_store, classification="single", grade="0.9", graph_keywords='["retrieve_chunks"]')
-
-    result = await get_rag_context_impl(ctx, str(user_id), "how does chunk retrieval work?")
-
-    assert "[Code Graph Context]" not in result.context_text
-
-
-@pytest.mark.asyncio
-async def test_get_rag_context_graph_fusion_skipped_when_no_keywords_extracted(qdrant, graph_store):
-    user_id = uuid.uuid4()
-    graph_store.upsert_symbols([
-        {"id": "1", "user_id": str(user_id), "repo_id": "r1", "kind": "function", "name": "retrieve_chunks"},
-    ])
-    ctx = _ctx(qdrant, graph_store=graph_store, classification="single", grade="0.9")  # graph_keywords defaults to "[]"
-
-    result = await get_rag_context_impl(ctx, str(user_id), "query", repo_id="r1")
+    ctx = _ctx(qdrant, classification="single", grade="0.9")
+    result = await get_rag_context_impl(ctx, str(uuid.uuid4()), "how does chunk retrieval work?")
 
     assert "[Code Graph Context]" not in result.context_text
 
