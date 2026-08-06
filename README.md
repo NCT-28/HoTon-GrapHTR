@@ -17,14 +17,14 @@ FastAPI, Qdrant, Neo4j, Postgres, sentence-transformers, transformers/torch, tre
 ## Setup
 
 ```bash
-cp docker/.env.example .env
+cp docker-graph/.env.example .env
 pip install -r requirements.txt
 ```
 
-Configure `.env` (see `docker/.env.example` for all variables): Qdrant/Neo4j/Postgres connection info, embedding/reasoning model names, SearXNG/browser service URLs, dashboard credentials.
+Configure `.env` (see `docker-graph/.env.example` for all variables): Qdrant/Neo4j/Postgres connection info, embedding/reasoning model names, SearXNG/browser service URLs, dashboard credentials.
 
 `DASHBOARD_USER` and `DASHBOARD_PASSWORD` are required for the dashboard to
-serve. `install.sh` copies `docker/.env.example` with both blank, so `/dashboard`
+serve. `install.sh` copies `docker-graph/.env.example` with both blank, so `/dashboard`
 and `/api/dashboard/summary` return `503 dashboard auth not configured` until you
 set them in `.env` and restart. This is deliberate: `install.sh` binds uvicorn to
 `0.0.0.0:8030`, and the summary endpoint exposes per-user ids and counts, every
@@ -35,7 +35,7 @@ ingested repo across every user, and backend health error text.
 ### Docker (recommended)
 
 ```bash
-docker compose -f docker/docker-compose.yml up --build
+docker compose -f docker-graph/docker-compose.yml up --build
 ```
 
 Starts the app plus Qdrant, Neo4j, and Postgres. App listens on `:8030`.
@@ -113,7 +113,7 @@ ls graphtr-out/
 ```
 
 **Config:** set `DEPLOY_MODE=local` either as an env var (as above) or in
-`.env` (`cp docker/.env.example .env`, then edit `DEPLOY_MODE=local`).
+`.env` (`cp docker-graph/.env.example .env`, then edit `DEPLOY_MODE=local`).
 `LOCAL_DATA_DIR` (default `./graphtr-out`) controls where the three files
 land — set it to point elsewhere if you don't want them under the repo.
 
@@ -142,7 +142,45 @@ app/
   mcp_server.py
 scripts/      # knowledge-base build/index, skill bootstrap
 tests/
-docker/       # Dockerfile, docker-compose.yml, .env.example
+docker-graph/ # Dockerfile, docker-compose.yml, .env.example
 install.sh    # zero-service installer -- clones (if needed) + sets up + runs
 uninstall.sh  # removes what install.sh created (.venv/, local data, optionally .env)
 ```
+
+## Using graphtr in another project
+
+`graphtr` (code graph) and `graphtr-knowledge` (narrative docs) are skills this
+repo hosts — adopting them elsewhere means copying the skill files into that
+project and pointing a Claude session there at this repo's running server.
+
+**Recommended — one command, from inside the target project:**
+
+```bash
+cd /path/to/other-project
+curl -fsSL https://raw.githubusercontent.com/NCT-28/HoTon-GrapHTR/develop/install.sh | bash -s -- --run
+```
+
+Since this isn't run from inside a HoTon-GrapHTR checkout, it clones one into
+`~/.graphtr`, starts the server there, then auto-bootstraps the *calling*
+project (`other-project`): copies `.claude/skills/graphtr/` and
+`.claude/skills/graphtr-knowledge/` in, and runs
+`claude mcp add --transport http hoton-graphtr http://localhost:8030/mcp -s local`
+so a Claude session in `other-project` can see the tools. Safe to re-run.
+
+**Manual, if the server is already running somewhere (e.g. Docker deploy):**
+
+```bash
+python3 scripts/init_graphtr_skills.py /path/to/other-project
+cd /path/to/other-project && claude mcp add --transport http hoton-graphtr <server-url>/mcp -s local
+```
+
+`init_graphtr_skills.py` (run from this repo) copies both skills into the
+target, rewriting `graphtr`'s script paths to invoke this repo's
+`scripts/query.py`/`build_viewer.py` directly (the target doesn't get its own
+copy) and bundling `graphtr-knowledge`'s scripts under the target's own skill
+dir (it has no hoton-graphtr checkout to point at).
+
+Either way, first use in a Claude session on the target project is the
+`graphtr` skill's Bootstrap step: `ingest_codebase(source="<other-project path>")`
+writes `graphtr-out/` straight into that project. See the `graphtr` skill for
+the Docker-deploy path caveat (repo must be under the `code-repos` bind mount).
