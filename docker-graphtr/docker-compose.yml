@@ -17,7 +17,6 @@ services:
       USAGE_DB_NAME: hoton_rag
       DASHBOARD_USER: ${DASHBOARD_USER:-}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}
-      CODE_REPOS_DIR: /data/code-repos
       RAG_PORT: 8030
       EMBED_MODEL_NAME: ${RAG_EMBED_MODEL_NAME:-sentence-transformers/all-MiniLM-L6-v2}
       EMBED_DIM: ${RAG_EMBED_DIM:-384}

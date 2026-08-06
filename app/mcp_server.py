@@ -170,14 +170,14 @@ def embed_text_impl(ctx: ToolContext, text: str) -> EmbedTextResult:
 
 
 def ingest_codebase_impl(ctx: ToolContext, source: str) -> IngestCodebaseResult:
-    # Git URLs would clone into settings.code_repos_dir inside the container and
-    # the graphtr-out/ written there would be unreachable to the caller -- and with
-    # a fresh repo_id per call, every clone would leak a new directory.
+    # Git URLs would clone into the container and the graphtr-out/ written there
+    # would be unreachable to the caller -- and with a fresh repo_id per call,
+    # every clone would leak a new directory.
     if source.startswith(("http://", "https://")):
         raise ValueError("git URLs are not supported; clone the repo and pass a local path")
 
     repo_id = str(uuid.uuid4())
-    local_path = resolve_repo_source(source, repo_id)
+    local_path = resolve_repo_source(source)
     symbols, edges = parse_repo(repo_id, local_path)
     out_dir = write_graph_snapshot(local_path, repo_id, symbols, edges)
     render_viewer(out_dir)

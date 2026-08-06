@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     # No hardcoded default: an unset NEO4J_PASSWORD must fail auth against Neo4j,
     # not silently connect with a guessable credential.
     neo4j_password: SecretStr = SecretStr("")
-    code_repos_dir: str = "./repos"
     usage_db_url: str = ""
     usage_db_host: str = ""
     usage_db_port: int = 5432
