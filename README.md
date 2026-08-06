@@ -5,7 +5,7 @@ Code-aware RAG + knowledge-graph service. FastAPI app exposing REST + MCP tools 
 ## Features
 
 - **RAG**: document ingestion, chunking, embedding (Sentence-Transformers) and vector search (Qdrant), plus user memory/profile stores.
-- **Code graph**: parses repos (tree-sitter) into a graph (Neo4j via `code_graph_store`), with entity extraction/linking, repo watching for live reindex, and graph query endpoints.
+- **Code graph**: stateless, one-shot `ingest_codebase` MCP tool parses a repo (tree-sitter) and writes `graph.json`/`manifest.json`/`graphtr.html` straight into that repo's own `graphtr-out/` — no server-side storage, no watcher. Query the output offline (`scripts/query.py`) or browse `graphtr.html`. Separately, RAG document ingestion extracts text entities into a Neo4j/SQLite graph (`code_graph_store`) for entity linking.
 - **Agentic**: ReAct loop, HyDE, web search grading via SearXNG, routing.
 - **MCP server**: tools exposed over `mcp` for agent/tool integration.
 - **Dashboard**: usage tracking backed by Postgres, health/queries endpoints.
@@ -93,10 +93,14 @@ pip install -r requirements.txt
 DEPLOY_MODE=local uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 ```
 
-No Qdrant/Neo4j/Postgres needed — vectors, the code graph, and usage tracking
-all write to `graphtr-out/` (`qdrant/`, `graph.sqlite`, `usage.sqlite`).
-`server` and `local` are two independent data stores, not a live migration
-path — switching `DEPLOY_MODE` does not carry data over.
+No Qdrant/Neo4j/Postgres needed — vectors, text-entity linking, and usage
+tracking write to this server's own `graphtr-out/` (`qdrant/`, `graph.sqlite`,
+`usage.sqlite`). `server` and `local` are two independent data stores, not a
+live migration path — switching `DEPLOY_MODE` does not carry data over.
+
+Code-graph ingest (`ingest_codebase`) is stateless in both deploy modes and
+writes into the *ingested repo's own* `graphtr-out/` instead — a separate
+directory from this server-local one, and unaffected by `DEPLOY_MODE`.
 
 **Verify it's running:**
 
@@ -131,7 +135,7 @@ app/
   agentic/    # ReAct, HyDE, grading, routing
   clients/    # embeddings, llm, qdrant, browser clients
   dashboard/  # usage tracking, health, queries, router
-  graph/      # code graph store, parser, entity extraction/linking, repo watcher
+  graph/      # code parser + stateless snapshot writer, text-entity extraction/linking
   rag/        # chunking, retrieval, documents, memory, profile
   config.py   # Settings (pydantic-settings, env-driven)
   main.py     # FastAPI app factory
