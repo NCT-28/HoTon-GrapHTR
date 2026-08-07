@@ -19,9 +19,9 @@
 #
 # --graph-only: for weak/low-spec machines. Installs requirements-graph.txt
 # instead (no torch/transformers/sentence-transformers/qdrant-client/neo4j/
-# psycopg), skips .env/DEPLOY_MODE and model pre-download, and (with --run)
-# starts app.graph_mcp_server:create_graph_only_app instead -- exposes only
-# the ingest_codebase MCP tool.
+# psycopg), skips .env/DEPLOY_MODE entirely, and (with --run) starts
+# app.graph_mcp_server:create_graph_only_app instead -- exposes only the
+# ingest_codebase MCP tool.
 set -euo pipefail
 
 # Captured before any `cd` -- the directory the script was invoked from, i.e.
@@ -179,29 +179,8 @@ else
   fi
 
   echo ""
-  echo "Pre-downloading embedding/reasoning models (skips any already cached)..."
-  "$PYTHON_BIN" <<'PYEOF' || echo "Warning: model pre-download failed, will download lazily on first request instead." >&2
-from sentence_transformers import SentenceTransformer
-from transformers import pipeline
-import torch
-from app.config import get_settings
-
-if torch.cuda.is_available():
-    print(f"GPU detected: {torch.cuda.get_device_name(0)} (CUDA {torch.version.cuda}) -- models will run on GPU.")
-else:
-    print("No NVIDIA GPU detected -- models will run on CPU.")
-
-settings = get_settings()
-print(f"  embed model: {settings.embed_model_name}")
-SentenceTransformer(settings.embed_model_name)
-print(f"  reasoning model: {settings.reasoning_model_name}")
-device = 0 if torch.cuda.is_available() else -1
-pipeline("text-generation", model=settings.reasoning_model_name, device=device)
-print("Models ready.")
-PYEOF
-
-  echo ""
   echo "Setup done. .env has DEPLOY_MODE=local."
+  echo "Embedding/reasoning models download lazily on first request (not pre-downloaded)."
   echo "Data will be written under \$LOCAL_DATA_DIR (default ./graphtr-out)."
 fi
 
@@ -256,7 +235,7 @@ if [ "$RUN_AFTER" -eq 1 ]; then
   # would keep serving the old in-memory code indefinitely. Always restart so
   # --run picks up whatever just changed; other projects sharing this server
   # will see a brief reconnect. (Old server already stopped above -- in full
-  # mode, before pre-download, to free GPU memory and the local Qdrant
+  # mode, to free GPU memory held by a loaded model and the local Qdrant
   # storage lock; graph-only mode has neither, but the stop is unconditional.)
   LOG_FILE="$REPO_ROOT/graphtr-server.log"
   echo ""
