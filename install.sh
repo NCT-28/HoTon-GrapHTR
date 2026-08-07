@@ -16,6 +16,12 @@
 # Sets up a venv, installs requirements.txt, writes DEPLOY_MODE=local into
 # .env, and (with --run) starts the server. No Docker, no Qdrant/Neo4j/Postgres.
 # Clones the develop branch by default (override with HOTON_GRAPHTR_REPO_BRANCH).
+#
+# --graph-only: for weak/low-spec machines. Installs requirements-graph.txt
+# instead (no torch/transformers/sentence-transformers/qdrant-client/neo4j/
+# psycopg), skips .env/DEPLOY_MODE and model pre-download, and (with --run)
+# starts app.graph_mcp_server:create_graph_only_app instead -- exposes only
+# the ingest_codebase MCP tool.
 set -euo pipefail
 
 # Captured before any `cd` -- the directory the script was invoked from, i.e.
@@ -249,8 +255,9 @@ if [ "$RUN_AFTER" -eq 1 ]; then
   # (see the clone/pull step above) -- a healthy-but-stale server left running
   # would keep serving the old in-memory code indefinitely. Always restart so
   # --run picks up whatever just changed; other projects sharing this server
-  # will see a brief reconnect. (Old server already stopped above, before
-  # pre-download, to free GPU memory and the local Qdrant storage lock.)
+  # will see a brief reconnect. (Old server already stopped above -- in full
+  # mode, before pre-download, to free GPU memory and the local Qdrant
+  # storage lock; graph-only mode has neither, but the stop is unconditional.)
   LOG_FILE="$REPO_ROOT/graphtr-server.log"
   echo ""
   echo "Starting server on :$PORT (detached -- survives Ctrl+C / shell exit)..."
