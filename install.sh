@@ -14,11 +14,11 @@
 #   curl -fsSL .../install.sh | bash -s -- my-dir --run
 #
 # Sets up a venv, installs requirements.txt, writes DEPLOY_MODE=local into
-# .env, and (with --run) starts the server. No Docker, no Qdrant/Neo4j/Postgres.
+# .env, and (with --run) starts the server. No Docker, no Qdrant/Postgres.
 # Clones the develop branch by default (override with HOTON_GRAPHTR_REPO_BRANCH).
 #
 # --graph-only: for weak/low-spec machines. Installs requirements-graph.txt
-# instead (no torch/transformers/sentence-transformers/qdrant-client/neo4j/
+# instead (no torch/transformers/sentence-transformers/qdrant-client/
 # psycopg), skips .env/DEPLOY_MODE entirely, and (with --run) starts
 # app.graph_mcp_server:create_graph_only_app instead -- exposes only the
 # ingest_codebase MCP tool.
@@ -92,7 +92,7 @@ fi
 
 cd "$REPO_ROOT"
 
-# app/graph/code_graph_store.py and others use `X | None` type hints evaluated
+# app/mcp_server.py and others use `X | None` type hints evaluated
 # at import time (PEP 604) -- requires Python 3.10+. Plain `python3` is too
 # old on some systems (e.g. macOS system Python is 3.9), so probe newer
 # interpreters first.
@@ -180,7 +180,7 @@ else
 
   echo ""
   echo "Setup done. .env has DEPLOY_MODE=local."
-  echo "Embedding/reasoning models download lazily on first request (not pre-downloaded)."
+  echo "Embedding model downloads lazily on first request (not pre-downloaded)."
   echo "Data will be written under \$LOCAL_DATA_DIR (default ./graphtr-out)."
 fi
 

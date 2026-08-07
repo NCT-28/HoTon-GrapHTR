@@ -17,11 +17,6 @@ class FakeEmbedder:
         return [0.1] * 384
 
 
-class FakeLLM:
-    def generate(self, prompt, max_new_tokens=256, temperature=0.1):
-        return "[]"
-
-
 def _seed_memory(qdrant, user_id, content, confidence=0.8):
     qdrant.upsert(
         collection_name=USER_MEMORIES,
@@ -47,11 +42,11 @@ def _seed_memory(qdrant, user_id, content, confidence=0.8):
     return qdrant.scroll(collection_name=USER_MEMORIES, limit=1)[0][0].id
 
 
-def test_list_memories_returns_active_only(qdrant, graph_store):
+def test_list_memories_returns_active_only(qdrant):
     user_id = uuid.uuid4()
     _seed_memory(qdrant, user_id, "remembered fact")
 
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder())
     client = TestClient(app)
     resp = client.get("/api/memories", headers={"X-User-Id": str(user_id)})
 
@@ -61,11 +56,11 @@ def test_list_memories_returns_active_only(qdrant, graph_store):
     assert memories[0]["content"] == "remembered fact"
 
 
-def test_delete_memory_removes_it(qdrant, graph_store):
+def test_delete_memory_removes_it(qdrant):
     user_id = uuid.uuid4()
     memory_id = _seed_memory(qdrant, user_id, "to be deleted")
 
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder())
     client = TestClient(app)
     resp = client.delete(f"/api/memories/{memory_id}", headers={"X-User-Id": str(user_id)})
     assert resp.status_code == 204
@@ -74,19 +69,19 @@ def test_delete_memory_removes_it(qdrant, graph_store):
     assert listed.json() == []
 
 
-def test_delete_memory_wrong_user_returns_404(qdrant, graph_store):
+def test_delete_memory_wrong_user_returns_404(qdrant):
     user_id = uuid.uuid4()
     memory_id = _seed_memory(qdrant, user_id, "someone else's memory")
 
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder())
     client = TestClient(app)
     resp = client.delete(f"/api/memories/{memory_id}", headers={"X-User-Id": str(uuid.uuid4())})
     assert resp.status_code == 404
 
 
-def test_get_memories_records_usage(qdrant, graph_store, usage_store):
+def test_get_memories_records_usage(qdrant, usage_store):
     app = create_app(
-        qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store, usage_store=usage_store,
+        qdrant_client=qdrant, embedder=FakeEmbedder(), usage_store=usage_store,
     )
     client = TestClient(app)
     client.get("/api/memories", headers={"X-User-Id": str(uuid.uuid4())})

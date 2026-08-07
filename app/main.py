@@ -1,17 +1,13 @@
 import asyncio
 import contextlib
 
-import httpx
 from fastapi import FastAPI, Header
 
 from app.clients.browser_client import BrowserClient
 from app.rag.cleanup import start_memory_cleanup_job
-from app.graph.code_graph_store import get_graph_store
 from app.config import get_settings
 from app.rag.documents import add_url_route, build_documents_router
 from app.clients.embeddings import get_embedder
-from app.agentic.grading import searxng_web_search
-from app.clients.llm import get_reasoning_llm
 from app.mcp_server import build_mcp_server, build_tool_context
 from app.rag.memory import build_memory_router
 from app.rag.profile import build_profile_router
@@ -20,30 +16,17 @@ from app.dashboard.router import build_dashboard_router
 from app.dashboard.usage_store import get_usage_store
 
 
-async def _default_web_search(query: str) -> list[str]:
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        return await searxng_web_search(client, settings.searxng_url, query)
-
-
 def create_app(
-    qdrant_client=None, embedder=None, browser_client=None, llm=None, web_search_fn=None,
-    graph_store=None, usage_store=None,
+    qdrant_client=None, embedder=None, browser_client=None, usage_store=None,
 ) -> FastAPI:
     get_client_fn = (lambda: qdrant_client) if qdrant_client is not None else get_qdrant_client
     get_embedder_fn = (lambda: embedder) if embedder is not None else get_embedder
-    get_llm_fn = (lambda: llm) if llm is not None else get_reasoning_llm
     get_browser_fn = (lambda: browser_client) if browser_client is not None else (
         lambda: BrowserClient(get_settings().browser_service_url)
     )
-    resolved_web_search_fn = web_search_fn if web_search_fn is not None else _default_web_search
-    resolved_graph_store = graph_store if graph_store is not None else get_graph_store()
     get_usage_store_fn = (lambda: usage_store) if usage_store is not None else get_usage_store
 
-    tool_ctx = build_tool_context(
-        get_client_fn(), get_embedder_fn(), get_llm_fn(), resolved_web_search_fn,
-        resolved_graph_store, get_usage_store_fn(),
-    )
+    tool_ctx = build_tool_context(get_client_fn(), get_embedder_fn(), get_usage_store_fn())
     mcp = build_mcp_server(tool_ctx)
     mcp_app = mcp.streamable_http_app()  # must be called once before mcp.session_manager exists
 
@@ -58,17 +41,12 @@ def create_app(
 
     app = FastAPI(title="hoton-graphtr", lifespan=lifespan)
 
-    router = build_documents_router(
-        get_client_fn, get_embedder_fn, lambda: resolved_graph_store, get_llm_fn, get_usage_store_fn,
-    )
-    add_url_route(
-        router, get_client_fn, get_embedder_fn, get_browser_fn,
-        lambda: resolved_graph_store, get_llm_fn, get_usage_store_fn,
-    )
+    router = build_documents_router(get_client_fn, get_embedder_fn, get_usage_store_fn)
+    add_url_route(router, get_client_fn, get_embedder_fn, get_browser_fn, get_usage_store_fn)
     app.include_router(router)
     app.include_router(build_memory_router(get_client_fn, get_usage_store_fn))
     app.include_router(build_profile_router(get_client_fn, get_usage_store_fn))
-    app.include_router(build_dashboard_router(get_client_fn, lambda: resolved_graph_store, get_usage_store_fn, get_embedder_fn))
+    app.include_router(build_dashboard_router(get_client_fn, get_usage_store_fn, get_embedder_fn))
 
     @app.get("/health")
     async def health():

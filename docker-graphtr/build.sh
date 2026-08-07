@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rebuild và chạy lại docker-graphtr (hoton-graphtr + qdrant + neo4j).
+# Rebuild và chạy lại docker-graphtr (hoton-graphtr + qdrant).
 # Usage: ./rebuild.sh [-t|--tag VERSION]   (mặc định tag: latest)
 
 set -e

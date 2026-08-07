@@ -9,14 +9,9 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
 from app.rag.context import apply_self_consistency, build_full_context
-from app.agentic.grading import crag_correct
-from app.agentic.hyde import generate_hypothetical_answer
-from app.rag.memory import extract_and_store_memories, retrieve_memories
+from app.rag.memory import retrieve_memories
 from app.rag.profile import get_or_create_profile, update_profile_from_message
-from app.agentic.react import run_multi_step_retrieval
 from app.rag.retrieval import retrieve_chunks
-from app.agentic.routing import QueryComplexity, classify_query
-from app.graph.code_graph_store import GraphStore
 from app.graph.ingest import IngestCodebaseResult, ingest_codebase_impl
 from app.dashboard.tracker import track_usage
 from app.dashboard.usage_store import UsageStore
@@ -26,20 +21,13 @@ from app.dashboard.usage_store import UsageStore
 class ToolContext:
     client: QdrantClient
     embedder: object
-    llm: object
-    web_search_fn: object  # Callable[[str], Awaitable[list[str]]]
-    graph_store: GraphStore | None = None
     usage_store: UsageStore | None = None
 
 
 def build_tool_context(
-    client: QdrantClient, embedder, llm, web_search_fn,
-    graph_store: GraphStore | None = None, usage_store: UsageStore | None = None,
+    client: QdrantClient, embedder, usage_store: UsageStore | None = None,
 ) -> ToolContext:
-    return ToolContext(
-        client=client, embedder=embedder, llm=llm, web_search_fn=web_search_fn,
-        graph_store=graph_store, usage_store=usage_store,
-    )
+    return ToolContext(client=client, embedder=embedder, usage_store=usage_store)
 
 
 class ChunkOut(BaseModel):
@@ -79,10 +67,6 @@ def _to_chunk_out(chunks) -> list[ChunkOut]:
     ]
 
 
-class ExtractMemoriesResult(BaseModel):
-    stored: int
-
-
 class UpdateProfileResult(BaseModel):
     updated: bool
 
@@ -100,29 +84,15 @@ MEMORY_MIN_SIMILARITY = 0.6
 async def get_rag_context_impl(ctx: ToolContext, user_id: str, query: str) -> RagContextResult:
     # This handler is `async def`, so anything called directly (not via
     # asyncio.to_thread) blocks the single event loop for its full duration —
-    # LLM inference and Qdrant network search are neither. Offloading each
-    # blocking step to a thread lets concurrent requests interleave instead of
-    # fully serializing behind one caller's multi-step retrieval chain.
+    # Qdrant network search is not. Offloading each blocking step to a thread
+    # lets concurrent requests interleave.
     uid = uuid.UUID(user_id)
-    complexity = await asyncio.to_thread(classify_query, ctx.llm, query)
-
-    if complexity == QueryComplexity.DIRECT:
-        return RagContextResult(context_text="", chunks_used=0, memories_used=0, chunks=[])
-
-    if complexity == QueryComplexity.MULTI:
-        chunks, memories = await asyncio.to_thread(
-            run_multi_step_retrieval, ctx.client, ctx.embedder, ctx.llm, uid, query, RAG_TOP_K, RAG_MIN_SIMILARITY
-        )
-        chunks = await crag_correct(ctx.llm, ctx.web_search_fn, query, chunks)
-    else:  # SINGLE
-        hyde_query = await asyncio.to_thread(generate_hypothetical_answer, ctx.llm, query)
-        chunks = await asyncio.to_thread(
-            retrieve_chunks, ctx.client, ctx.embedder, uid, hyde_query, RAG_TOP_K, RAG_MIN_SIMILARITY
-        )
-        chunks = await crag_correct(ctx.llm, ctx.web_search_fn, query, chunks)
-        memories = await asyncio.to_thread(
-            retrieve_memories, ctx.client, ctx.embedder, uid, query, MEMORY_TOP_K, MEMORY_MIN_SIMILARITY
-        )
+    chunks = await asyncio.to_thread(
+        retrieve_chunks, ctx.client, ctx.embedder, uid, query, RAG_TOP_K, RAG_MIN_SIMILARITY
+    )
+    memories = await asyncio.to_thread(
+        retrieve_memories, ctx.client, ctx.embedder, uid, query, MEMORY_TOP_K, MEMORY_MIN_SIMILARITY
+    )
 
     apply_self_consistency(memories, query)
     profile = await asyncio.to_thread(get_or_create_profile, ctx.client, uid)
@@ -141,15 +111,6 @@ def retrieve_chunks_impl(
 ) -> RetrieveChunksResult:
     chunks = retrieve_chunks(ctx.client, ctx.embedder, uuid.UUID(user_id), query, top_k, min_similarity)
     return RetrieveChunksResult(chunks=_to_chunk_out(chunks))
-
-
-def extract_and_store_memories_impl(
-    ctx: ToolContext, user_id: str, user_message: str, assistant_message: str
-) -> ExtractMemoriesResult:
-    stored = extract_and_store_memories(
-        ctx.client, ctx.embedder, ctx.llm, uuid.UUID(user_id), user_message, assistant_message
-    )
-    return ExtractMemoriesResult(stored=stored)
 
 
 def update_profile_from_message_impl(ctx: ToolContext, user_id: str, user_message: str) -> UpdateProfileResult:
@@ -175,12 +136,6 @@ def build_mcp_server(ctx: ToolContext) -> FastMCP:
         """Raw chunk search, for workflow rag_query nodes."""
         with track_usage(ctx.usage_store, "retrieve_chunks", user_id):
             return retrieve_chunks_impl(ctx, user_id, query, top_k, min_similarity)
-
-    @mcp.tool()
-    def extract_and_store_memories(user_id: str, user_message: str, assistant_message: str) -> ExtractMemoriesResult:
-        """Post-turn hook: extract and store facts/preferences from a conversation turn."""
-        with track_usage(ctx.usage_store, "extract_and_store_memories", user_id):
-            return extract_and_store_memories_impl(ctx, user_id, user_message, assistant_message)
 
     @mcp.tool()
     def update_profile_from_message(user_id: str, user_message: str) -> UpdateProfileResult:

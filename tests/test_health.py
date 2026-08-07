@@ -28,12 +28,6 @@ def test_check_qdrant_down():
     assert result == {"name": "qdrant", "up": False, "error": "refused"}
 
 
-def test_check_neo4j_up(graph_store):
-    result = health.check_neo4j(graph_store)
-    assert result["name"] == "neo4j"
-    assert result["up"] is True
-
-
 def test_check_postgres_up(usage_store):
     result = health.check_postgres(usage_store)
     assert result["name"] == "postgres"

@@ -172,29 +172,16 @@ def ingest_document(
 
 # --- REST layer ---
 
-import asyncio
 import datetime
 import uuid as _uuid
 
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile, status
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointIdsList
 
-from app.graph.graph_pipeline import run_entity_extraction_and_linking
 from app.clients.qdrant_store import RAG_DOCUMENTS
 
 
-def _run_entity_extraction_in_thread(get_graph_store, get_llm, embedder, user_id, source_doc_id, text) -> None:
-    # run_entity_extraction_and_linking has no real `await` inside -- it's a
-    # synchronous call chain (including llm.generate(), which can block for a
-    # long time: first-time model load hits the network, and inference itself
-    # is CPU-bound). asyncio.create_task() alone doesn't give it a thread, so
-    # scheduling the coroutine directly on the event loop freezes every other
-    # request until it's done. Deferring the get_llm()/get_graph_store() calls
-    # and the coroutine itself into a worker thread keeps the event loop free.
-    asyncio.run(run_entity_extraction_and_linking(get_graph_store(), get_llm(), embedder, user_id, source_doc_id, text))
-
-
-def build_documents_router(get_client, get_embedder, get_graph_store=None, get_llm=None, get_usage_store=None) -> APIRouter:
+def build_documents_router(get_client, get_embedder, get_usage_store=None) -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/documents", status_code=status.HTTP_202_ACCEPTED)
@@ -237,11 +224,6 @@ def build_documents_router(get_client, get_embedder, get_graph_store=None, get_l
             wait=True,
         )
 
-        if get_graph_store is not None and get_llm is not None:
-            asyncio.create_task(asyncio.to_thread(
-                _run_entity_extraction_in_thread, get_graph_store, get_llm, embedder, x_user_id, str(doc_id), text,
-            ))
-
         return {"document_id": str(doc_id)}
 
     @router.get("/api/documents")
@@ -279,8 +261,6 @@ def build_documents_router(get_client, get_embedder, get_graph_store=None, get_l
                 collection_name=RAG_CHUNKS,
                 points_selector=Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]),
             )
-            if get_graph_store is not None:
-                get_graph_store().delete_text_entities_by_source_doc(x_user_id, document_id)
             return None
 
     return router
@@ -298,7 +278,7 @@ class UrlDocumentRequest(BaseModel):
 
 def add_url_route(
     router: APIRouter, get_client, get_embedder, get_browser_client,
-    get_graph_store=None, get_llm=None, get_usage_store=None,
+    get_usage_store=None,
 ) -> None:
     @router.post("/api/documents/url", status_code=status.HTTP_202_ACCEPTED)
     async def upload_url_document(payload: UrlDocumentRequest, x_user_id: str = Header(...)):
@@ -342,10 +322,5 @@ def add_url_route(
             ],
             wait=True,
         )
-
-        if get_graph_store is not None and get_llm is not None:
-            asyncio.create_task(asyncio.to_thread(
-                _run_entity_extraction_in_thread, get_graph_store, get_llm, embedder, x_user_id, str(doc_id), text,
-            ))
 
         return {"document_id": str(doc_id)}

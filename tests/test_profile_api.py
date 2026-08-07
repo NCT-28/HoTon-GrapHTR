@@ -15,21 +15,16 @@ class FakeEmbedder:
         return [0.1] * 384
 
 
-class FakeLLM:
-    def generate(self, prompt, max_new_tokens=256, temperature=0.1):
-        return "[]"
-
-
-def test_get_profile_returns_default(qdrant, graph_store):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
+def test_get_profile_returns_default(qdrant):
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder())
     client = TestClient(app)
     resp = client.get("/api/profile", headers={"X-User-Id": str(uuid.uuid4())})
     assert resp.status_code == 200
     assert resp.json()["level"] == "unknown"
 
 
-def test_patch_profile_updates_fields(qdrant, graph_store):
-    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store)
+def test_patch_profile_updates_fields(qdrant):
+    app = create_app(qdrant_client=qdrant, embedder=FakeEmbedder())
     client = TestClient(app)
     user_id = str(uuid.uuid4())
 
@@ -46,9 +41,9 @@ def test_patch_profile_updates_fields(qdrant, graph_store):
     assert fetched.json()["level"] == "advanced"
 
 
-def test_get_profile_records_usage(qdrant, graph_store, usage_store):
+def test_get_profile_records_usage(qdrant, usage_store):
     app = create_app(
-        qdrant_client=qdrant, embedder=FakeEmbedder(), llm=FakeLLM(), graph_store=graph_store, usage_store=usage_store,
+        qdrant_client=qdrant, embedder=FakeEmbedder(), usage_store=usage_store,
     )
     client = TestClient(app)
     client.get("/api/profile", headers={"X-User-Id": str(uuid.uuid4())})

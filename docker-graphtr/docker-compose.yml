@@ -7,9 +7,6 @@ services:
       - "${RAG_PORT:-8030}:8030"
     environment:
       QDRANT_URL: http://qdrant:6333
-      NEO4J_URL: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env — no weak default}
       USAGE_DB_HOST: postgres
       USAGE_DB_PORT: 5432
       USAGE_DB_USER: lmr
@@ -20,7 +17,6 @@ services:
       RAG_PORT: 8030
       EMBED_MODEL_NAME: ${RAG_EMBED_MODEL_NAME:-sentence-transformers/all-MiniLM-L6-v2}
       EMBED_DIM: ${RAG_EMBED_DIM:-384}
-      REASONING_MODEL_NAME: ${RAG_REASONING_MODEL_NAME:-Qwen/Qwen2.5-1.5B-Instruct}
       HF_HUB_DISABLE_XET: "1"
     volumes:
       - ${MODELS_DIR:-./models}/huggingface:/root/.cache/huggingface
@@ -28,8 +24,6 @@ services:
     depends_on:
       qdrant:
         condition: service_started
-      neo4j:
-        condition: service_healthy
       # postgres:
       #   condition: service_healthy
     networks:
@@ -42,21 +36,6 @@ services:
       - "127.0.0.1:6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
-
-  neo4j:
-    image: neo4j:5-community
-    ports:
-      - "127.0.0.1:7474:7474"
-      - "127.0.0.1:7687:7687"
-    environment:
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env — no weak default}
-    volumes:
-      - neo4j_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
 
   # postgres:
   #   image: postgres:16-alpine
@@ -76,7 +55,6 @@ services:
 
 volumes:
   qdrant_data:
-  neo4j_data:
   postgres_data:
 
 networks:

@@ -154,13 +154,13 @@ the `graphtr` MCP server and skill (referenced above) talk to.
 ```bash
 pip install -r requirements.txt
 
-# Run (needs Qdrant/Neo4j/Postgres reachable per .env)
+# Run (needs Qdrant/Postgres reachable per .env)
 uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 
 # Run zero-service, no external DBs (writes to graphtr-out/ instead)
 DEPLOY_MODE=local uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 
-# Docker (app + Qdrant + Neo4j + Postgres)
+# Docker (app + Qdrant + Postgres)
 docker compose -f docker/docker-compose.yml up --build
 
 # Tests
@@ -177,7 +177,7 @@ flow (fresh-machine clone vs. in-place, what gets removed).
 
 **Dual deploy mode is the central design constraint.** Every stateful backend
 in this app has two implementations selected at runtime by
-`Settings.deploy_mode` (`app/config.py`): `"server"` (Qdrant/Neo4j/Postgres,
+`Settings.deploy_mode` (`app/config.py`): `"server"` (Qdrant/Postgres,
 the default) or `"local"` (file-backed, everything under
 `Settings.local_data_dir`, default `./graphtr-out/`). When touching any of
 these, both branches need to keep working:
@@ -192,23 +192,28 @@ Switching `DEPLOY_MODE` does not migrate data between the two stores — they
 are independent.
 
 **App wiring (`app/main.py`):** `create_app()` takes every dependency
-(`qdrant_client`, `embedder`, `llm`, `graph_store`, `usage_store`, etc.) as an
-optional constructor argument, defaulting to the real `get_*()` factories when
-omitted. Tests construct `create_app()` with fakes/in-memory instances
-instead of monkeypatching — see `tests/conftest.py`'s `FakeGraphStore` and the
-in-memory `QdrantClient(":memory:")` fixture for the pattern to follow.
+(`qdrant_client`, `embedder`, `usage_store`, etc.) as an optional constructor
+argument, defaulting to the real `get_*()` factories when omitted. Tests
+construct `create_app()` with fakes/in-memory instances instead of
+monkeypatching — see `tests/conftest.py`'s `FakeUsageStore` and the in-memory
+`QdrantClient(":memory:")` fixture for the pattern to follow.
+
+**No reasoning LLM.** The service only ever loads the embedding model
+(`sentence-transformers`); nothing in `app/` calls out to a local or remote
+LLM. `get_rag_context` is a single embedding-similarity retrieval pass —
+no query-complexity routing, HyDE, CRAG grading/web-search fallback, ReAct
+multi-step retrieval, LLM-based memory extraction, or text-entity extraction.
+This keeps the service runnable on low-spec machines.
 
 **Module layout (`app/`):**
-- `agentic/` — ReAct loop (`react.py`), HyDE (`hyde.py`), CRAG-style grading and
-  SearXNG web search (`grading.py`), query complexity routing (`routing.py`).
-- `clients/` — thin wrappers around Qdrant, the embedding model, the LLM, and
-  a browser-automation service used for URL ingestion.
+- `clients/` — thin wrappers around Qdrant, the embedding model, and a
+  browser-automation service used for URL ingestion.
 - `graph/` — code graph pipeline: `repo_source.py` resolves a local repo path
   to ingest, `code_parser.py` (tree-sitter) parses symbols/edges,
   `snapshot_writer.py` writes them straight to `<repo>/graphtr-out/` (no
-  server-side state), `entity_extraction.py`/`entity_linker.py` build the
-  separate text-entity graph, `code_graph_store.py` is the `GraphStore`
-  abstraction (Neo4j/SQLite) that still backs that TextEntity surface.
+  server-side state). There is no separate text-entity graph or `GraphStore`
+  (Neo4j/SQLite) anymore — its only writer needed the reasoning LLM and was
+  removed along with it.
 - `rag/` — document ingestion/chunking (`chunker.py`, `documents.py`),
   retrieval (`retrieval.py`), self-consistency/context assembly
   (`context.py`), user memory and profile stores (`memory.py`, `profile.py`),

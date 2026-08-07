@@ -1,18 +1,17 @@
 # HoTon-GrapHTR
 
-Code-aware RAG + knowledge-graph service. FastAPI app exposing REST + MCP tools for retrieval-augmented generation, code graph indexing/querying, agentic reasoning (ReAct, HyDE), and a usage dashboard.
+Code-aware RAG + knowledge-graph service. FastAPI app exposing REST + MCP tools for retrieval-augmented generation, code graph indexing/querying, and a usage dashboard.
 
 ## Features
 
 - **RAG**: document ingestion, chunking, embedding (Sentence-Transformers) and vector search (Qdrant), plus user memory/profile stores.
-- **Code graph**: stateless, one-shot `ingest_codebase` MCP tool parses a repo (tree-sitter) and writes `graph.json`/`manifest.json`/`graphtr.html` straight into that repo's own `graphtr-out/` — no server-side storage, no watcher. Query the output offline (`scripts/query.py`) or browse `graphtr.html`. Separately, RAG document ingestion extracts text entities into a Neo4j/SQLite graph (`code_graph_store`) for entity linking.
-- **Agentic**: ReAct loop, HyDE, web search grading via SearXNG, routing.
+- **Code graph**: stateless, one-shot `ingest_codebase` MCP tool parses a repo (tree-sitter) and writes `graph.json`/`manifest.json`/`graphtr.html` straight into that repo's own `graphtr-out/` — no server-side storage, no watcher. Query the output offline (`scripts/query.py`) or browse `graphtr.html`.
 - **MCP server**: tools exposed over `mcp` for agent/tool integration.
 - **Dashboard**: usage tracking backed by Postgres, health/queries endpoints.
 
 ## Stack
 
-FastAPI, Qdrant, Neo4j, Postgres, sentence-transformers, transformers/torch, tree-sitter, MCP.
+FastAPI, Qdrant, Postgres, sentence-transformers/torch, tree-sitter, MCP.
 
 ## Setup
 
@@ -21,7 +20,7 @@ cp docker-graphtr/.env.example .env
 pip install -r requirements.txt
 ```
 
-Configure `.env` (see `docker-graphtr/.env.example` for all variables): Qdrant/Neo4j/Postgres connection info, embedding/reasoning model names, SearXNG/browser service URLs, dashboard credentials.
+Configure `.env` (see `docker-graphtr/.env.example` for all variables): Qdrant/Postgres connection info, embedding model name, browser service URL, dashboard credentials.
 
 `DASHBOARD_USER` and `DASHBOARD_PASSWORD` are required for the dashboard to
 serve. `install.sh` copies `docker-graphtr/.env.example` with both blank, so `/dashboard`
@@ -38,11 +37,11 @@ ingested repo across every user, and backend health error text.
 docker compose -f docker-graphtr/docker-compose.yml up --build
 ```
 
-Starts the app plus Qdrant, Neo4j, and Postgres. App listens on `:8030`.
+Starts the app plus Qdrant and Postgres. App listens on `:8030`.
 
 ### Local
 
-Requires Qdrant/Neo4j/Postgres running and reachable per `.env`.
+Requires Qdrant/Postgres running and reachable per `.env`.
 
 ```bash
 uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
@@ -77,7 +76,7 @@ checkout (`requirements.txt` + `app/main.py` present in the cwd).
 
 #### Graph-only (weak machines, no RAG)
 
-If a machine can't run (or install) the embedding/reasoning models — e.g. a
+If a machine can't run (or install) the embedding model — e.g. a
 low-spec laptop — but you still want it to build a code graph and expose it
 to a Claude Code session via the `graphtr` skill, use:
 
@@ -86,7 +85,7 @@ bash install.sh --graph-only --run
 ```
 
 This installs `requirements-graph.txt` (no torch/transformers/
-sentence-transformers/qdrant-client/neo4j/psycopg) and starts
+sentence-transformers/qdrant-client/psycopg) and starts
 `app/graph_mcp_server.py`'s minimal MCP server, which exposes only
 `ingest_codebase`. No `.env`, no `DEPLOY_MODE`, no model downloads. Every
 other `graphtr` skill capability (RAG retrieval, memory, profile) is
@@ -111,10 +110,10 @@ pip install -r requirements.txt
 DEPLOY_MODE=local uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8030
 ```
 
-No Qdrant/Neo4j/Postgres needed — vectors, text-entity linking, and usage
-tracking write to this server's own `graphtr-out/` (`qdrant/`, `graph.sqlite`,
-`usage.sqlite`). `server` and `local` are two independent data stores, not a
-live migration path — switching `DEPLOY_MODE` does not carry data over.
+No Qdrant/Postgres needed — vectors and usage tracking write to this
+server's own `graphtr-out/` (`qdrant/`, `usage.sqlite`). `server` and `local`
+are two independent data stores, not a live migration path — switching
+`DEPLOY_MODE` does not carry data over.
 
 Code-graph ingest (`ingest_codebase`) is stateless in both deploy modes and
 writes into the *ingested repo's own* `graphtr-out/` instead — a separate
@@ -127,16 +126,16 @@ curl http://localhost:8030/health
 # {"status":"ok"}
 
 ls graphtr-out/
-# qdrant/  graph.sqlite  usage.sqlite
+# qdrant/  usage.sqlite
 ```
 
 **Config:** set `DEPLOY_MODE=local` either as an env var (as above) or in
 `.env` (`cp docker-graphtr/.env.example .env`, then edit `DEPLOY_MODE=local`).
-`LOCAL_DATA_DIR` (default `./graphtr-out`) controls where the three files
-land — set it to point elsewhere if you don't want them under the repo.
+`LOCAL_DATA_DIR` (default `./graphtr-out`) controls where these land — set it
+to point elsewhere if you don't want them under the repo.
 
 **Switching back to `server` mode:** unset `DEPLOY_MODE` (or set it back to
-`server`) and restart — it reconnects to Qdrant/Neo4j/Postgres per `.env`.
+`server`) and restart — it reconnects to Qdrant/Postgres per `.env`.
 The `graphtr-out/` files from local mode are untouched and unused; delete
 them manually if you want to reclaim the disk space.
 

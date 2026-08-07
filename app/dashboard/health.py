@@ -1,4 +1,4 @@
-"""Live health pings for hoton-graphtr's four dependencies, used by
+"""Live health pings for hoton-graphtr's three dependencies, used by
 GET /api/dashboard/summary. Each check catches its own errors — one dependency
 being down must not break the others or the endpoint as a whole."""
 
@@ -12,15 +12,6 @@ def check_qdrant(client) -> dict:
         return {"name": "qdrant", "up": True, "latency_ms": round((time.monotonic() - start) * 1000, 1)}
     except Exception as e:
         return {"name": "qdrant", "up": False, "error": str(e)[:200]}
-
-
-def check_neo4j(graph_store) -> dict:
-    start = time.monotonic()
-    try:
-        graph_store.ping()
-        return {"name": "neo4j", "up": True, "latency_ms": round((time.monotonic() - start) * 1000, 1)}
-    except Exception as e:
-        return {"name": "neo4j", "up": False, "error": str(e)[:200]}
 
 
 def check_postgres(usage_store) -> dict:

@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 MCP_TOOL_NAMES = frozenset({
     "get_rag_context",
     "retrieve_chunks",
-    "extract_and_store_memories",
     "update_profile_from_message",
     "embed_text",
     "ingest_codebase",

@@ -18,21 +18,15 @@ class FakeBrowserClient:
         return f"page content for {url} " * 20
 
 
-class FakeLLM:
-    def generate(self, prompt, max_new_tokens=256, temperature=0.1):
-        return "[]"
-
-
 def test_browser_client_calls_expected_endpoint():
     # BrowserClient.get_page_text posts to {base_url}/navigate and reads `.text`
     client = BrowserClient(base_url="http://browser:8090")
     assert client.base_url == "http://browser:8090"
 
 
-def test_upload_url_rejects_private_targets(qdrant, graph_store):
+def test_upload_url_rejects_private_targets(qdrant):
     app = create_app(
-        qdrant_client=qdrant, embedder=FakeEmbedder(), browser_client=FakeBrowserClient(), llm=FakeLLM(),
-        graph_store=graph_store,
+        qdrant_client=qdrant, embedder=FakeEmbedder(), browser_client=FakeBrowserClient(),
     )
     client = TestClient(app)
     resp = client.post(
@@ -43,10 +37,9 @@ def test_upload_url_rejects_private_targets(qdrant, graph_store):
     assert resp.status_code == 400
 
 
-def test_upload_url_ingests_page_text(qdrant, graph_store):
+def test_upload_url_ingests_page_text(qdrant):
     app = create_app(
-        qdrant_client=qdrant, embedder=FakeEmbedder(), browser_client=FakeBrowserClient(), llm=FakeLLM(),
-        graph_store=graph_store,
+        qdrant_client=qdrant, embedder=FakeEmbedder(), browser_client=FakeBrowserClient(),
     )
     client = TestClient(app)
     user_id = str(uuid.uuid4())

@@ -2,7 +2,7 @@
 and HTTP route hit gets one row here (metadata only — never query/message
 content). `FakeUsageStore` (an in-memory test double implementing the same
 interface) lives in tests/conftest.py so every consumer can be unit-tested
-without a live Postgres instance, mirroring GraphStore/FakeGraphStore."""
+without a live Postgres instance."""
 
 import os
 import sqlite3
@@ -54,8 +54,7 @@ def bootstrap_usage_database(usage_db_url: str) -> None:
     try:
         db_name = urlparse(usage_db_url).path.lstrip("/")
         # db_name comes from trusted server config (env var), never user input —
-        # same trust level as the Cypher edge-type interpolation in
-        # app/graph/code_graph_store.py, not a SQL-injection surface.
+        # not a SQL-injection surface.
         try:
             admin_conn.execute(f"CREATE DATABASE {db_name}")
         except psycopg.errors.DuplicateDatabase:
