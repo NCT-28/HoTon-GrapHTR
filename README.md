@@ -75,6 +75,24 @@ bash install.sh --run
 Safe to re-run; skips the clone since it detects it's already inside the
 checkout (`requirements.txt` + `app/main.py` present in the cwd).
 
+#### Graph-only (weak machines, no RAG)
+
+If a machine can't run (or install) the embedding/reasoning models — e.g. a
+low-spec laptop — but you still want it to build a code graph and expose it
+to a Claude Code session via the `graphtr` skill, use:
+
+```bash
+bash install.sh --graph-only --run
+```
+
+This installs `requirements-graph.txt` (no torch/transformers/
+sentence-transformers/qdrant-client/neo4j/psycopg) and starts
+`app/graph_mcp_server.py`'s minimal MCP server, which exposes only
+`ingest_codebase`. No `.env`, no `DEPLOY_MODE`, no model downloads. Every
+other `graphtr` skill capability (RAG retrieval, memory, profile) is
+unavailable on a graph-only install — use the full `install.sh --run` (or
+the shared-server setup in `docs/connecting-a-new-repo.md`) for those.
+
 To remove what `install.sh` created (run from the repo root):
 
 ```bash
