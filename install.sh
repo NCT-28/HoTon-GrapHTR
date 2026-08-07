@@ -34,10 +34,12 @@ REPO_BRANCH="${HOTON_GRAPHTR_REPO_BRANCH:-develop}"
 PORT="${HOTON_GRAPHTR_PORT:-8030}"
 
 RUN_AFTER=0
+GRAPH_ONLY=0
 TARGET_DIR=""
 for arg in "$@"; do
   case "$arg" in
     --run) RUN_AFTER=1 ;;
+    --graph-only) GRAPH_ONLY=1 ;;
     *) TARGET_DIR="$arg" ;;
   esac
 done
@@ -129,49 +131,50 @@ fi
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-echo "Installing dependencies (torch/transformers make first run slow, be patient)..."
 pip install --quiet --upgrade pip
-pip install --quiet -r requirements.txt
-
-ENV_FILE="$REPO_ROOT/.env"
-if [ ! -f "$ENV_FILE" ]; then
-  echo "Creating .env from docker/.env.example"
-  cp "$REPO_ROOT/docker/.env.example" "$ENV_FILE"
-fi
-
-if grep -q '^DEPLOY_MODE=' "$ENV_FILE"; then
-  # -i.bak works on both BSD sed (macOS) and GNU sed (Linux); plain -i does not.
-  sed -i.bak 's/^DEPLOY_MODE=.*/DEPLOY_MODE=local/' "$ENV_FILE"
-  rm -f "$ENV_FILE.bak"
+if [ "$GRAPH_ONLY" -eq 1 ]; then
+  echo "Installing dependencies (graph-only: no torch/transformers)..."
+  pip install --quiet -r requirements-graph.txt
 else
-  echo "DEPLOY_MODE=local" >>"$ENV_FILE"
+  echo "Installing dependencies (torch/transformers make first run slow, be patient)..."
+  pip install --quiet -r requirements.txt
 fi
 
-if [ "$RUN_AFTER" -eq 1 ]; then
-  # Stop any existing server before pre-downloading models below -- a
-  # leftover server (from a prior --run) holds the reasoning model in GPU
-  # memory, so the pipeline() load in the pre-download step can hit CUDA
-  # OOM if the old process is still running. Stopping it here, rather than
-  # after pre-download, also frees the local Qdrant storage lock before the
-  # new server starts further down.
-  if command -v lsof >/dev/null 2>&1; then
-    EXISTING_PIDS=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
-    if [ -n "$EXISTING_PIDS" ]; then
-      echo ""
-      echo "Stopping existing server on :$PORT (pid(s) $EXISTING_PIDS) to load new code..."
-      kill $EXISTING_PIDS 2>/dev/null || true
-      sleep 1
-      STILL_RUNNING=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
-      if [ -n "$STILL_RUNNING" ]; then
-        kill -9 $STILL_RUNNING 2>/dev/null || true
-      fi
+if [ "$RUN_AFTER" -eq 1 ] && command -v lsof >/dev/null 2>&1; then
+  EXISTING_PIDS=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
+  if [ -n "$EXISTING_PIDS" ]; then
+    echo ""
+    echo "Stopping existing server on :$PORT (pid(s) $EXISTING_PIDS) to load new code..."
+    kill $EXISTING_PIDS 2>/dev/null || true
+    sleep 1
+    STILL_RUNNING=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
+    if [ -n "$STILL_RUNNING" ]; then
+      kill -9 $STILL_RUNNING 2>/dev/null || true
     fi
   fi
 fi
 
-echo ""
-echo "Pre-downloading embedding/reasoning models (skips any already cached)..."
-"$PYTHON_BIN" <<'PYEOF' || echo "Warning: model pre-download failed, will download lazily on first request instead." >&2
+if [ "$GRAPH_ONLY" -eq 1 ]; then
+  echo ""
+  echo "Setup done (graph-only -- no .env, no models to download)."
+else
+  ENV_FILE="$REPO_ROOT/.env"
+  if [ ! -f "$ENV_FILE" ]; then
+    echo "Creating .env from docker/.env.example"
+    cp "$REPO_ROOT/docker/.env.example" "$ENV_FILE"
+  fi
+
+  if grep -q '^DEPLOY_MODE=' "$ENV_FILE"; then
+    # -i.bak works on both BSD sed (macOS) and GNU sed (Linux); plain -i does not.
+    sed -i.bak 's/^DEPLOY_MODE=.*/DEPLOY_MODE=local/' "$ENV_FILE"
+    rm -f "$ENV_FILE.bak"
+  else
+    echo "DEPLOY_MODE=local" >>"$ENV_FILE"
+  fi
+
+  echo ""
+  echo "Pre-downloading embedding/reasoning models (skips any already cached)..."
+  "$PYTHON_BIN" <<'PYEOF' || echo "Warning: model pre-download failed, will download lazily on first request instead." >&2
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
 import torch
@@ -191,9 +194,10 @@ pipeline("text-generation", model=settings.reasoning_model_name, device=device)
 print("Models ready.")
 PYEOF
 
-echo ""
-echo "Setup done. .env has DEPLOY_MODE=local."
-echo "Data will be written under \$LOCAL_DATA_DIR (default ./graphtr-out)."
+  echo ""
+  echo "Setup done. .env has DEPLOY_MODE=local."
+  echo "Data will be written under \$LOCAL_DATA_DIR (default ./graphtr-out)."
+fi
 
 # Auto-bootstrap the calling project: copy the graphtr/graphtr-knowledge
 # skills into it and register the hoton-graphtr MCP server, so `graphtr-out/`
@@ -233,6 +237,12 @@ if [ "$ORIGINAL_PWD" != "$REPO_ROOT" ]; then
   fi
 fi
 
+if [ "$GRAPH_ONLY" -eq 1 ]; then
+  APP_TARGET="app.graph_mcp_server:create_graph_only_app"
+else
+  APP_TARGET="app.main:create_app"
+fi
+
 if [ "$RUN_AFTER" -eq 1 ]; then
   # The server is shared across every project that installs into ~/.graphtr,
   # but a re-run always means the repo was just git-pulled to a newer commit
@@ -244,7 +254,7 @@ if [ "$RUN_AFTER" -eq 1 ]; then
   LOG_FILE="$REPO_ROOT/graphtr-server.log"
   echo ""
   echo "Starting server on :$PORT (detached -- survives Ctrl+C / shell exit)..."
-  nohup uvicorn app.main:create_app --factory --host 0.0.0.0 --port "$PORT" \
+  nohup uvicorn "$APP_TARGET" --factory --host 0.0.0.0 --port "$PORT" \
     >"$LOG_FILE" 2>&1 </dev/null &
   SERVER_PID=$!
   disown
@@ -254,7 +264,7 @@ else
   echo ""
   echo "Run:"
   echo "  cd $REPO_ROOT && source .venv/bin/activate"
-  echo "  uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT"
+  echo "  uvicorn $APP_TARGET --factory --host 0.0.0.0 --port $PORT"
   echo ""
   echo "Verify:"
   echo "  curl http://localhost:$PORT/health"
