@@ -17,9 +17,7 @@ from app.agentic.react import run_multi_step_retrieval
 from app.rag.retrieval import retrieve_chunks
 from app.agentic.routing import QueryComplexity, classify_query
 from app.graph.code_graph_store import GraphStore
-from app.graph.code_parser import parse_repo
-from app.graph.repo_source import resolve_repo_source
-from app.graph.snapshot_writer import render_viewer, write_graph_snapshot
+from app.graph.ingest import IngestCodebaseResult, ingest_codebase_impl
 from app.dashboard.tracker import track_usage
 from app.dashboard.usage_store import UsageStore
 
@@ -93,12 +91,6 @@ class EmbedTextResult(BaseModel):
     embedding: list[float]
 
 
-class IngestCodebaseResult(BaseModel):
-    repo_id: str
-    symbol_count: int
-    edge_count: int
-
-
 RAG_TOP_K = 5
 RAG_MIN_SIMILARITY = 0.65
 MEMORY_TOP_K = 5
@@ -169,21 +161,6 @@ def embed_text_impl(ctx: ToolContext, text: str) -> EmbedTextResult:
     return EmbedTextResult(embedding=ctx.embedder.embed_single(text))
 
 
-def ingest_codebase_impl(ctx: ToolContext, source: str) -> IngestCodebaseResult:
-    # Git URLs would clone into the container and the graphtr-out/ written there
-    # would be unreachable to the caller -- and with a fresh repo_id per call,
-    # every clone would leak a new directory.
-    if source.startswith(("http://", "https://")):
-        raise ValueError("git URLs are not supported; clone the repo and pass a local path")
-
-    repo_id = str(uuid.uuid4())
-    local_path = resolve_repo_source(source)
-    symbols, edges = parse_repo(repo_id, local_path)
-    out_dir = write_graph_snapshot(local_path, repo_id, symbols, edges)
-    render_viewer(out_dir)
-    return IngestCodebaseResult(repo_id=repo_id, symbol_count=len(symbols), edge_count=len(edges))
-
-
 def build_mcp_server(ctx: ToolContext) -> FastMCP:
     mcp = FastMCP("hoton-graphtr", stateless_http=True, json_response=True)
 
@@ -223,6 +200,6 @@ def build_mcp_server(ctx: ToolContext) -> FastMCP:
         graphtr.html). One-shot: nothing is kept server-side, query the output offline
         with scripts/query.py. Git URLs are not supported -- clone first, pass a path."""
         with track_usage(ctx.usage_store, "ingest_codebase", ""):
-            return ingest_codebase_impl(ctx, source)
+            return ingest_codebase_impl(source)
 
     return mcp

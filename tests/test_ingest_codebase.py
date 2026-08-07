@@ -2,11 +2,7 @@ import json
 
 import pytest
 
-from app.mcp_server import IngestCodebaseResult, ToolContext, ingest_codebase_impl
-
-
-def _ctx():
-    return ToolContext(client=None, embedder=None, llm=None, web_search_fn=None)
+from app.graph.ingest import IngestCodebaseResult, ingest_codebase_impl
 
 
 def _fixture_repo(tmp_path):
@@ -23,7 +19,7 @@ def _fixture_repo(tmp_path):
 def test_ingest_codebase_writes_graph_manifest_and_viewer(tmp_path):
     repo = _fixture_repo(tmp_path)
 
-    result = ingest_codebase_impl(_ctx(), str(repo))
+    result = ingest_codebase_impl(str(repo))
 
     out_dir = repo / "graphtr-out"
     assert isinstance(result, IngestCodebaseResult)
@@ -35,7 +31,7 @@ def test_ingest_codebase_writes_graph_manifest_and_viewer(tmp_path):
 def test_ingest_codebase_result_counts_match_graph_json(tmp_path):
     repo = _fixture_repo(tmp_path)
 
-    result = ingest_codebase_impl(_ctx(), str(repo))
+    result = ingest_codebase_impl(str(repo))
 
     graph = json.loads((repo / "graphtr-out" / "graph.json").read_text())
     assert result.symbol_count == len(graph["nodes"])
@@ -46,15 +42,15 @@ def test_ingest_codebase_result_counts_match_graph_json(tmp_path):
 def test_ingest_codebase_mints_a_fresh_repo_id_every_call(tmp_path):
     repo = _fixture_repo(tmp_path)
 
-    first = ingest_codebase_impl(_ctx(), str(repo))
-    second = ingest_codebase_impl(_ctx(), str(repo))
+    first = ingest_codebase_impl(str(repo))
+    second = ingest_codebase_impl(str(repo))
 
     assert first.repo_id != second.repo_id
 
 
 def test_ingest_codebase_rejects_git_urls(tmp_path):
     with pytest.raises(ValueError, match="git URLs are not supported"):
-        ingest_codebase_impl(_ctx(), "https://github.com/example/repo.git")
+        ingest_codebase_impl("https://github.com/example/repo.git")
 
 
 def test_ingest_codebase_preserves_rag_user_id_in_manifest(tmp_path):
@@ -63,7 +59,7 @@ def test_ingest_codebase_preserves_rag_user_id_in_manifest(tmp_path):
     out_dir.mkdir()
     (out_dir / "manifest.json").write_text(json.dumps({"rag_user_id": "keep-me"}))
 
-    ingest_codebase_impl(_ctx(), str(repo))
+    ingest_codebase_impl(str(repo))
 
     manifest = json.loads((out_dir / "manifest.json").read_text())
     assert manifest["rag_user_id"] == "keep-me"
