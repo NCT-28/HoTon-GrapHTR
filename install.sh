@@ -166,8 +166,8 @@ if [ "$GRAPH_ONLY" -eq 1 ]; then
 else
   ENV_FILE="$REPO_ROOT/.env"
   if [ ! -f "$ENV_FILE" ]; then
-    echo "Creating .env from docker/.env.example"
-    cp "$REPO_ROOT/docker/.env.example" "$ENV_FILE"
+    echo "Creating .env from docker-graphtr/.env.example"
+    cp "$REPO_ROOT/docker-graphtr/.env.example" "$ENV_FILE"
   fi
 
   if grep -q '^DEPLOY_MODE=' "$ENV_FILE"; then
